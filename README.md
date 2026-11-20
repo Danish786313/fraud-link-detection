@@ -40,10 +40,10 @@ The server starts at: **`http://localhost:3201`**
 
 ## API Reference
 
-### Scan URL (`POST /api/detect-v2`)
+### Scan URL (`POST /api/detect`)
 Performs 14 security checks including local heuristics, DNS/SSL inspection, and domain age analysis.
 
-- **Endpoint:** `POST /api/detect-v2`
+- **Endpoint:** `POST /api/detect` (or `POST /api/detect-v2`)
 - **Headers:** `Content-Type: application/json`
 - **Body:**
   ```json
@@ -99,7 +99,7 @@ Performs 14 security checks including local heuristics, DNS/SSL inspection, and 
         "available": false
       }
     },
-    "protocols": {
+    "PROTOCOLS": {
       "HTTP_PROTOCOL": true,
       "HOSTNAME": true,
       "PUNYCODE": true,
@@ -144,17 +144,21 @@ Performs 14 security checks including local heuristics, DNS/SSL inspection, and 
 
 ```text
 link-guard/
-├── app.js                          # Express entry point (port 3201)
+├── app.js                          # Express entry point & global error catcher (port 3201)
 ├── routes/
-│   └── routerIndex.js              # Route definitions (/detect-v2)
+│   └── routerIndex.js              # Route definitions (/detect, /detect-v2)
 ├── controllers/
-│   └── link.detection.controller.js# Request validation (Joi) & controllers
+│   └── linkDetectionController.js  # Request validation (Joi) & custom detection
 ├── services/
 │   └── scanlink.js                 # 14-point heuristic scanning engine
 ├── utils/
-│   └── responseHandler.js          # Global API response helper functions
+│   └── responseHandler.js          # Standardized response helper functions
 ├── views/
-│   └── index.html                  # Interactive web testing client
+│   ├── index.html                  # Semantic frontend interface
+│   ├── css/
+│   │   └── style.css               # Responsive design & theme
+│   └── js/
+│       └── app.js                  # Frontend client application script
 ├── .env.example                    # Template for environment variables (optional)
 └── package.json
 ```
@@ -164,7 +168,7 @@ link-guard/
 ## Testing via cURL
 
 ```bash
-curl -X POST http://localhost:3201/api/detect-v2 \
+curl -X POST http://localhost:3201/api/detect \
   -H "Content-Type: application/json" \
   -d '{"link": "https://google.com"}'
 ```

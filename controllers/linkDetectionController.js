@@ -11,7 +11,7 @@ const urlSchema = Joi.object({
   })
 });
 
-exports.custumFraudDetectionCont = async (req, res) => {
+const customFraudDetectionController = async (req, res, next) => {
   try {
     const { error } = urlSchema.validate(req.body);
     if (error && error.details && error.details[0]) {
@@ -22,7 +22,15 @@ exports.custumFraudDetectionCont = async (req, res) => {
     return sendSuccess(res, data, 'Scan completed successfully');
 
   } catch (err) {
-    console.error("::: err :::", err);
+    console.error("::: Error in custom fraud detection controller :::", err);
+    // Pass error to global error catcher or send standard error response
+    if (typeof next === 'function') {
+      return next(err);
+    }
     return sendError(res, err.message || 'Internal server error', 500);
   }
+};
+
+module.exports = {
+  customFraudDetectionController
 };

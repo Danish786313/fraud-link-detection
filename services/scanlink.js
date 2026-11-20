@@ -4,7 +4,7 @@ const net = require('node:net');
 const tls = require('node:tls');
 const { domainToASCII } = require('node:url');
 
-const protocols = {
+const PROTOCOLS = {
   HTTP_PROTOCOL: false,
   HOSTNAME: false,
   PUNYCODE: false,
@@ -47,8 +47,8 @@ const BLACKLIST_API = 'https://www.virustotal.com/api/v3/domains/';
 
 // Reset check statuses for each URL
 function resetProtocols() {
-  for (const key of Object.keys(protocols)) {
-    protocols[key] = false;
+  for (const key of Object.keys(PROTOCOLS)) {
+    PROTOCOLS[key] = false;
   }
 }
 
@@ -305,28 +305,28 @@ async function runLocalHeuristics(rawUrl, options = {}) {
   const hostname = parsed.hostname.toLowerCase();
 
   // HTTP protocol
-  protocols.HTTP_PROTOCOL = true;
+  PROTOCOLS.HTTP_PROTOCOL = true;
   checks.HTTP_PROTOCOL = ['http:', 'https:'].includes(parsed.protocol);
   if (!checks.HTTP_PROTOCOL) {
     issues.push(`Blocked protocol: ${parsed.protocol}`);
   }
 
   // Hostname
-  protocols.HOSTNAME = true;
+  PROTOCOLS.HOSTNAME = true;
   checks.HOSTNAME = !net.isIP(hostname);
   if (!checks.HOSTNAME) {
     issues.push('Hostname is a raw IP address');
   }
 
   // URL
-  protocols.URL_LENGTH = true;
+  PROTOCOLS.URL_LENGTH = true;
   checks.URL_LENGTH = rawUrl.length <= 2048;
   if (!checks.URL_LENGTH) {
     issues.push('Unusually long URL detected');
   }
 
   // Suspicious
-  protocols.SUSPICIOUS_KEYWORDS = true;
+  PROTOCOLS.SUSPICIOUS_KEYWORDS = true;
   checks.SUSPICIOUS_KEYWORDS = checkKeywords(rawUrl);
   if (checks.SUSPICIOUS_KEYWORDS.length > 0) {
     issues.push(
@@ -335,14 +335,14 @@ async function runLocalHeuristics(rawUrl, options = {}) {
   }
 
   // 5. URL shortener
-  protocols.SHORT_URL = true;
+  PROTOCOLS.SHORT_URL = true;
   checks.SHORT_URL = isShortUrl(hostname);
   if (checks.SHORT_URL) {
     issues.push('URL shortener detected');
   }
 
   // 6. Punycode
-  protocols.PUNYCODE = true;
+  PROTOCOLS.PUNYCODE = true;
   const homograph = checkHomograph(hostname);
   checks.PUNYCODE = homograph.isPunycode;
   if (homograph.isPunycode) {
@@ -350,35 +350,35 @@ async function runLocalHeuristics(rawUrl, options = {}) {
   }
 
   // Homograph
-  protocols.HOMOGRAPH_ATTACK = true;
+  PROTOCOLS.HOMOGRAPH_ATTACK = true;
   checks.HOMOGRAPH_ATTACK = homograph.isPunycode;
   if (checks.HOMOGRAPH_ATTACK) {
     issues.push('Potential homograph attack detected');
   }
 
   // Subdomain
-  protocols.SUBDOMAIN_CHECK = true;
+  PROTOCOLS.SUBDOMAIN_CHECK = true;
   checks.SUBDOMAIN_CHECK = checkSubdomains(hostname);
   if (checks.SUBDOMAIN_CHECK) {
     issues.push('Excessive subdomains detected');
   }
 
   // domain check
-  protocols.EMAIL_DOMAIN_CHECK = true;
+  PROTOCOLS.EMAIL_DOMAIN_CHECK = true;
   checks.EMAIL_DOMAIN_CHECK = checkEmailDomain(hostname);
   if (checks.EMAIL_DOMAIN_CHECK) {
     issues.push('Suspicious email-related domain detected');
   }
 
   // DNS
-  protocols.DNSLOOKUP = true;
+  PROTOCOLS.DNSLOOKUP = true;
   checks.DNSLOOKUP = await checkDNS(hostname);
   if (!checks.DNSLOOKUP.resolved) {
     issues.push('Domain does not resolve');
   }
 
   // Domain
-  protocols.DOMAIN_AGE = true;
+  PROTOCOLS.DOMAIN_AGE = true;
   checks.DOMAIN_AGE = await checkDomainAge(hostname);
   if (
     checks.DOMAIN_AGE.available &&
@@ -388,7 +388,7 @@ async function runLocalHeuristics(rawUrl, options = {}) {
   }
 
   // SSL
-  protocols.SSL_CERTIFICATE = true;
+  PROTOCOLS.SSL_CERTIFICATE = true;
   if (parsed.protocol === 'https:' && !net.isIP(hostname)) {
     checks.SSL_CERTIFICATE = await checkSSL(hostname, 443);
     if (!checks.SSL_CERTIFICATE.valid) {
@@ -402,14 +402,14 @@ async function runLocalHeuristics(rawUrl, options = {}) {
   }
 
   // 13. Redirect checking
-  protocols.REDIRECT_CHECK = true;
+  PROTOCOLS.REDIRECT_CHECK = true;
   checks.REDIRECT_CHECK = await checkRedirects(rawUrl);
   if (checks.REDIRECT_CHECK.tooManyRedirects) {
     issues.push('Too many redirects detected');
   }
 
   // 14. Blacklist checking
-  protocols.BLACKLIST_CHECK = true;
+  PROTOCOLS.BLACKLIST_CHECK = true;
   checks.BLACKLIST_CHECK = await checkBlacklist(
     hostname,
     options.virusTotalApiKey
@@ -435,7 +435,8 @@ async function runLocalHeuristics(rawUrl, options = {}) {
           : 'SAFE',
     issues,
     checks,
-    protocols: { ...protocols }
+    PROTOCOLS: { ...PROTOCOLS },
+    protocols: { ...PROTOCOLS }
   };
 }
 
