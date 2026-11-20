@@ -21,7 +21,7 @@ A fast Node.js/Express service for detecting fraudulent, phishing, and malicious
 ### 2. Installation
 ```bash
 git clone <repo-url>
-cd link-guard
+cd fraud-detection-link
 npm install
 ```
 
@@ -55,62 +55,66 @@ Performs 14 security checks including local heuristics, DNS/SSL inspection, and 
 #### Response Example
 ```json
 {
-  "url": "http://suspicious-bank-login.xyz",
-  "hostname": "suspicious-bank-login.xyz",
-  "isSuspicious": true,
-  "riskLevel": "HIGH",
-  "issues": [
-    "Suspicious keywords: login, bank",
-    "Recently registered domain (less than 30 days)",
-    "Invalid or untrusted SSL certificate"
-  ],
-  "checks": {
-    "HTTP_PROTOCOL": true,
-    "HOSTNAME": true,
-    "URL_LENGTH": true,
-    "SUSPICIOUS_KEYWORDS": ["login", "bank"],
-    "SHORT_URL": false,
-    "PUNYCODE": false,
-    "HOMOGRAPH_ATTACK": false,
-    "SUBDOMAIN_CHECK": false,
-    "EMAIL_DOMAIN_CHECK": false,
-    "DNSLOOKUP": {
-      "resolved": true,
-      "addresses": ["93.184.216.34"]
+  "success": true,
+  "message": "Scan completed successfully",
+  "data": {
+    "url": "http://suspicious-bank-login.xyz",
+    "hostname": "suspicious-bank-login.xyz",
+    "isSuspicious": true,
+    "riskLevel": "HIGH",
+    "issues": [
+      "Suspicious keywords: login, bank",
+      "Recently registered domain (less than 30 days)",
+      "Invalid or untrusted SSL certificate"
+    ],
+    "checks": {
+      "HTTP_PROTOCOL": true,
+      "HOSTNAME": true,
+      "URL_LENGTH": true,
+      "SUSPICIOUS_KEYWORDS": ["login", "bank"],
+      "SHORT_URL": false,
+      "PUNYCODE": false,
+      "HOMOGRAPH_ATTACK": false,
+      "SUBDOMAIN_CHECK": false,
+      "EMAIL_DOMAIN_CHECK": false,
+      "DNSLOOKUP": {
+        "resolved": true,
+        "addresses": ["93.184.216.34"]
+      },
+      "DOMAIN_AGE": {
+        "available": true,
+        "createdAt": "2026-11-08T00:00:00.000Z",
+        "ageDays": 12
+      },
+      "SSL_CERTIFICATE": {
+        "valid": false,
+        "error": "certificate has expired"
+      },
+      "REDIRECT_CHECK": {
+        "redirected": false,
+        "tooManyRedirects": false,
+        "redirectChain": []
+      },
+      "BLACKLIST_CHECK": {
+        "available": false
+      }
     },
-    "DOMAIN_AGE": {
-      "available": true,
-      "createdAt": "2026-11-08T00:00:00.000Z",
-      "ageDays": 12
-    },
-    "SSL_CERTIFICATE": {
-      "valid": false,
-      "error": "certificate has expired"
-    },
-    "REDIRECT_CHECK": {
-      "redirected": false,
-      "tooManyRedirects": false,
-      "redirectChain": []
-    },
-    "BLACKLIST_CHECK": {
-      "available": false
+    "protocols": {
+      "HTTP_PROTOCOL": true,
+      "HOSTNAME": true,
+      "PUNYCODE": true,
+      "DNSLOOKUP": true,
+      "URL_LENGTH": true,
+      "SUSPICIOUS_KEYWORDS": true,
+      "SHORT_URL": true,
+      "DOMAIN_AGE": true,
+      "SSL_CERTIFICATE": true,
+      "REDIRECT_CHECK": true,
+      "BLACKLIST_CHECK": true,
+      "HOMOGRAPH_ATTACK": true,
+      "SUBDOMAIN_CHECK": true,
+      "EMAIL_DOMAIN_CHECK": true
     }
-  },
-  "protocols": {
-    "HTTP_PROTOCOL": true,
-    "HOSTNAME": true,
-    "PUNYCODE": true,
-    "DNSLOOKUP": true,
-    "URL_LENGTH": true,
-    "SUSPICIOUS_KEYWORDS": true,
-    "SHORT_URL": true,
-    "DOMAIN_AGE": true,
-    "SSL_CERTIFICATE": true,
-    "REDIRECT_CHECK": true,
-    "BLACKLIST_CHECK": true,
-    "HOMOGRAPH_ATTACK": true,
-    "SUBDOMAIN_CHECK": true,
-    "EMAIL_DOMAIN_CHECK": true
   }
 }
 ```
@@ -147,8 +151,10 @@ link-guard/
 │   └── link.detection.controller.js# Request validation (Joi) & controllers
 ├── services/
 │   └── scanlink.js                 # 14-point heuristic scanning engine
+├── utils/
+│   └── responseHandler.js          # Global API response helper functions
 ├── views/
-│   └── index.html                 # Interactive web testing client
+│   └── index.html                  # Interactive web testing client
 ├── .env.example                    # Template for environment variables (optional)
 └── package.json
 ```
@@ -167,5 +173,4 @@ curl -X POST http://localhost:3201/api/detect-v2 \
 
 ## Web Interface
 
-The web interface is served directly by the Express server. Once the server is running, visit:
-**`http://localhost:3201`** in your browser.
+To use the interactive dashboard, open `views/index.html` in your browser while the Express server is running on port 3201.
