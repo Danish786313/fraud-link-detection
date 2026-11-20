@@ -1,7 +1,7 @@
 {
-  "name": "fraud-detection-link",
+  "name": "link-guard",
   "version": "1.0.0",
-  "description": "",
+  "description": "Link Guard - URL Fraud & Phishing Detection Engine",
   "main": "app.js",
   "scripts": {
     "start": "node app.js",

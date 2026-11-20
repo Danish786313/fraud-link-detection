@@ -242,7 +242,9 @@
 
 <script>
   // Change this if your backend runs at a different address.
-  const API_URL = 'http://localhost:3201/api/detect-v2';
+  const API_URL = (window.location.origin && window.location.origin !== 'null')
+    ? `${window.location.origin}/api/detect-v2`
+    : 'http://localhost:3201/api/detect-v2';
 
   const form = document.getElementById('scanForm');
   const input = document.getElementById('urlInput');

@@ -1,4 +1,4 @@
-# Fraud Detection Link API
+# Link Guard
 
 A fast Node.js/Express service for detecting fraudulent, phishing, and malicious URLs using multi-layered heuristic analysis.
 
@@ -21,7 +21,7 @@ A fast Node.js/Express service for detecting fraudulent, phishing, and malicious
 ### 2. Installation
 ```bash
 git clone <repo-url>
-cd fraud-detection-link
+cd link-guard
 npm install
 ```
 
@@ -139,7 +139,7 @@ Performs 14 security checks including local heuristics, DNS/SSL inspection, and 
 ## Project Structure
 
 ```text
-fraud-detection-link/
+link-guard/
 ├── app.js                          # Express entry point (port 3201)
 ├── routes/
 │   └── routerIndex.js              # Route definitions (/detect-v2)
@@ -167,4 +167,5 @@ curl -X POST http://localhost:3201/api/detect-v2 \
 
 ## Web Interface
 
-To use the interactive dashboard, open `views/index.html` in your browser while the Express server is running on port 3201.
+The web interface is served directly by the Express server. Once the server is running, visit:
+**`http://localhost:3201`** in your browser.
