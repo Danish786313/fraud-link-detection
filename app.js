@@ -33,6 +33,11 @@ app.use((req, res, next) => {
 // Serve static assets from views directory (HTML, CSS, JS)
 app.use(express.static(path.join(__dirname, 'views')));
 
+// Favicon handler
+app.get('/favicon.ico', (req, res) => {
+  res.type('image/svg+xml').sendFile(path.join(__dirname, 'views', 'favicon.svg'));
+});
+
 // API routes
 app.use('/api', routes);
 
