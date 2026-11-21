@@ -79,9 +79,11 @@
       <div class="quick-fill">
         <span class="quick-fill-label">Try sample:</span>
         <button type="button" class="chip" data-url="https://github.com">github.com (Safe)</button>
-        <button type="button" class="chip" data-url="http://192.168.1.1/admin/login">Raw IP</button>
-        <button type="button" class="chip" data-url="https://bit.ly/3sample">Short URL</button>
-        <button type="button" class="chip" data-url="http://bank-login-verify-account.xyz">Phishing Lure</button>
+        <button type="button" class="chip" data-url="http://192.168.1.1/admin/login">Raw IP (+5)</button>
+        <button type="button" class="chip" data-url="https://google.com@evil.com">@ Trick (+10)</button>
+        <button type="button" class="chip" data-url="http://paypa1.com/login">Brand Typo (+5)</button>
+        <button type="button" class="chip" data-url="https://bit.ly/3sample">Shortener (+2)</button>
+        <button type="button" class="chip" data-url="javascript:alert(1)">Bad Protocol (+10)</button>
       </div>
 
       <!-- Loading Spinner -->
@@ -307,33 +309,33 @@
         <div class="guide-card guide-safe">
           <div class="guide-header">
             <span class="pill pill-pass">SAFE</span>
-            <h4>0 Issues Flagged</h4>
+            <h4>0 Points</h4>
           </div>
-          <p>Standard trusted domain with valid SSL, active DNS records, established age (>30 days), and clean heuristics.</p>
+          <p>Standard trusted domain with valid SSL, established age (&gt;30 days), and clean heuristics.</p>
         </div>
 
         <div class="guide-card guide-low">
           <div class="guide-header">
             <span class="pill pill-warn">LOW</span>
-            <h4>1 Issue Flagged</h4>
+            <h4>1–4 Points</h4>
           </div>
-          <p>Minor heuristic flag, such as a known URL shortener or generic keyword. Proceed with normal vigilance.</p>
+          <p>Minor heuristic flag: URL shortener (+2), not using HTTPS (+2), risky TLD (+2), free host (+2), or keyword (+1).</p>
         </div>
 
         <div class="guide-card guide-medium">
           <div class="guide-header">
             <span class="pill pill-warn" style="background:#ffedd5;color:#ea580c;">MEDIUM</span>
-            <h4>2–3 Issues Flagged</h4>
+            <h4>5–9 Points</h4>
           </div>
-          <p>Multiple suspicious indicators (e.g. young domain with login keyword). Avoid entering sensitive credentials.</p>
+          <p>Elevated threat risk: Raw IP (+5), invalid/bad SSL (+5), newly registered domain (+5), or brand lookalike (+5).</p>
         </div>
 
         <div class="guide-card guide-high">
           <div class="guide-header">
             <span class="pill pill-fail">HIGH</span>
-            <h4>4+ Issues Flagged</h4>
+            <h4>10+ Points</h4>
           </div>
-          <p>Critical threat indicators (e.g. raw IP host, failed SSL, or Punycode spoofing). Do not visit this URL.</p>
+          <p>Critical danger: Dangerous protocol (+10), @ trick credentials (+10), VirusTotal malicious (+10), or multiple major flags.</p>
         </div>
       </div>
     </section>
@@ -387,7 +389,7 @@
       <div class="footer-right">
         <span>API v1.0.0</span>
         <span>•</span>
-        <span>Node.js Heuristic Scanner</span>
+        <span>Heuristic Scanner</span>
       </div>
     </div>
   </footer>

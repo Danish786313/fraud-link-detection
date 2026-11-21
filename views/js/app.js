@@ -249,15 +249,15 @@ document.addEventListener('DOMContentLoaded', () => {
     const verdictCard = document.getElementById('verdictCard');
     verdictCard.className = `result-card risk-${activeRisk.toLowerCase()}`;
     document.getElementById('riskBadge').textContent = activeRisk;
-    document.getElementById('riskTitle').textContent = `${activeRisk} Risk`;
+    document.getElementById('riskTitle').textContent = `${activeRisk} Risk (${result.score !== undefined ? result.score : 0} Points)`;
     document.getElementById('riskSubtitle').textContent = riskDescriptions[activeRisk] || 'Scan completed.';
     document.getElementById('scannedUrlText').textContent = result.url || input.value;
     document.getElementById('scanTimestamp').textContent = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
 
     // 2. Fact metrics
     document.getElementById('domainFact').textContent = result.hostname || '-';
-    document.getElementById('issueCountFact').textContent = String(issues.length);
-    document.getElementById('engineVerdictFact').textContent = activeRisk === 'SAFE' ? 'Clean' : 'Action Required';
+    document.getElementById('issueCountFact').textContent = `${issues.length} (${result.score !== undefined ? result.score : 0} pts)`;
+    document.getElementById('engineVerdictFact').textContent = activeRisk === 'SAFE' ? 'Clean' : 'Threat Flagged';
     
     // Count active PROTOCOLS
     const protocolsMap = result.PROTOCOLS || result.protocols || {};
@@ -339,8 +339,8 @@ document.addEventListener('DOMContentLoaded', () => {
       return;
     }
 
-    // Auto prepend https:// if missing protocol
-    if (!/^https?:\/\//i.test(rawValue)) {
+    // Auto prepend https:// if missing protocol, but preserve existing protocols (http, https, javascript, data, file)
+    if (!/^[a-zA-Z][a-zA-Z0-9+.-]*:/i.test(rawValue)) {
       rawValue = 'https://' + rawValue;
       input.value = rawValue;
     }

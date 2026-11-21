@@ -3,10 +3,8 @@ require("dotenv").config();
 const runLocalHeuristics = require('../services/scanlink');
 
 const urlSchema = Joi.object({
-  link: Joi.string().uri().required().messages({
+  link: Joi.string().trim().required().messages({
     'string.empty': 'link is required',
-    'string.uri': 'link must be valid uri',
-    'string.base': 'link must be valid uri',
     'any.required': 'link is required'
   })
 });

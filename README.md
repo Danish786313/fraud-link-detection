@@ -60,11 +60,15 @@ Performs 14 security checks including local heuristics, DNS/SSL inspection, and 
   "data": {
     "url": "http://suspicious-bank-login.xyz",
     "hostname": "suspicious-bank-login.xyz",
+    "mainDomain": "suspicious-bank-login.xyz",
+    "score": 13,
     "isSuspicious": true,
     "riskLevel": "HIGH",
     "issues": [
+      "Not using HTTPS",
+      "Risky top-level domain (TLD): .xyz",
       "Suspicious keywords: login, bank",
-      "Recently registered domain (less than 30 days)",
+      "Recently registered domain (12 days old)",
       "Invalid or untrusted SSL certificate"
     ],
     "checks": {
@@ -121,22 +125,45 @@ Performs 14 security checks including local heuristics, DNS/SSL inspection, and 
 
 ---
 
+## Threat Scoring & Points Engine
+
+Link Guard evaluates links using a weighted scoring model:
+
+| Threat Category | Weight | Description |
+| :--- | :--- | :--- |
+| **Critical Threats** | **+10 Points** | Dangerous protocols (`javascript:`, `data:`, `file:`), VirusTotal malicious flag, or embedded `@` credential spoofing |
+| **High Threats** | **+5 Points** | Raw IP host (IPv4/IPv6), invalid/expired SSL certificate, new domain (&lt;30 days via RDAP), or brand lookalike / typo-squatting |
+| **Suspicious Indicators** | **+2 Points** | URL shortener, unencrypted HTTP (`http://`), risky TLD, free hosting site, non-standard port, or redirect to a different domain |
+| **Lure Patterns** | **+1 Point** | Suspicious keywords (matching whole words on `%xx`-decoded URLs) |
+
+### Risk Tiers
+- **HIGH (`score >= 10`)**: Critical threat detected. Immediate avoidance recommended.
+- **MEDIUM (`score >= 5`)**: Multiple suspicious indicators. High vigilance required.
+- **LOW (`score >= 1`)**: Minor heuristic signals (e.g., shortener or generic keyword).
+- **SAFE (`score === 0`)**: Clean link with no detected anomalies.
+
+---
+
 ## Heuristics Overview
 
-| Check | Description |
-| :--- | :--- |
-| **Protocol** | Blocks non-HTTP/HTTPS protocols (`javascript:`, `data:`, `file:`) |
-| **Hostname / IP** | Flags raw IP addresses used instead of domain names |
-| **URL Length** | Identifies abnormally long URLs (> 2048 chars) often used for obfuscation |
-| **Keywords** | Detects credential/financial lures (`login`, `verify`, `banking`, `wallet`, etc.) |
-| **URL Shorteners** | Detects masking services (`bit.ly`, `tinyurl.com`, `t.co`, etc.) |
-| **Homograph & Punycode**| Uncovers internationalized domain spoofing (`xn--`) |
-| **Subdomain Depth** | Flags excessive nested subdomains (> 4 levels) |
-| **Email Keywords** | Detects credential-harvesting webmail impersonations |
-| **DNS Lookup** | Verifies active DNS A/AAAA records |
-| **Domain Age** | Queries RDAP to flag domains registered < 30 days ago |
-| **SSL/TLS Validation** | Validates HTTPS certificates, issuers, and validity windows |
-| **Redirect Tracing** | Follows HTTP hops and flags redirect chains / loops |
+| Check | Points | Description |
+| :--- | :--- | :--- |
+| **Protocol Safety** | +10 | Blocks dangerous protocols (`javascript:`, `data:`, `file:`) immediately |
+| **@ Credential Trick** | +10 | Detects embedded credentials in URL (`user:pass@host`) masking destination |
+| **Internal SSRF Shield** | +10 | Prevents fetching private ranges (`127.`, `10.`, `192.168.`, `172.16–31.`, `169.254.`, `::1`) |
+| **Raw IP Hostname** | +5 | Flags bare IPv4 and IPv6 addresses (with brackets stripped) |
+| **SSL / TLS Trust** | +5 | Validates certificate validity dates, authority chain, and handshakes |
+| **Domain Registration Age**| +5 | Queries RDAP using the main root domain to flag domains &lt; 30 days old |
+| **Brand Lookalike Defense**| +5 | Levenshtein distance & leetspeak checks against major brands & banks |
+| **HTTPS Enforcement** | +2 | Flags plain unencrypted `http://` connections |
+| **URL Shorteners** | +2 | Detects masking services (`bit.ly`, `tinyurl`, `rb.gy`, `t.ly`, etc.) |
+| **Risky TLDs** | +2 | Identifies high-abuse TLDs (`.zip`, `.mov`, `.xyz`, `.top`, `.tk`, etc.) |
+| **Free Hosting Abuse** | +2 | Identifies staging sites (`github.io`, `vercel.app`, `ngrok`, etc.) |
+| **Non-Standard Ports** | +2 | Flags ports other than standard 80 and 443 |
+| **Redirect Destination** | +2 | Follows redirect chain safely and flags destination domain differences |
+| **Keywords (Decoded)** | +1 | Scans `%xx`-decoded URLs matching whole words only (e.g. `login`, `bank`) |
+| **Punycode / Homograph** | +5 | Uncovers Unicode spoofing (counted once to avoid false-alarm inflation) |
+| **Subdomain Depth** | +2 | Measures prefix depth strictly in front of the main domain |
 
 ---
 
