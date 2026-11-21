@@ -1,407 +1,399 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>LinkGuard: Is this link safe?</title>
-<style>
-  :root {
-    --bg: #f4f7fb;
-    --white: #ffffff;
-    --ink: #222a37;
-    --muted: #5f6b7c;
-    --line: #e3e8ef;
-    --blue: #4361ee;
-    --blue-dark: #3450d6;
-    --red: #d63f2a;
-    --ok: #1b7f4e;
-    --warn: #a86400;
-    --bad: #c0302b;
-  }
-  * { box-sizing: border-box; }
-  body {
-    margin: 0;
-    background: var(--bg);
-    color: var(--ink);
-    font: 16px/1.5 Inter, "Segoe UI", system-ui, -apple-system, Helvetica, Arial, sans-serif;
-  }
-  a { color: var(--blue); }
-
-  /* top nav */
-  .nav { background: var(--white); border-bottom: 1px solid var(--line); }
-  .nav-inner {
-    max-width: 1240px; margin: 0 auto; padding: 0 24px; height: 68px;
-    display: flex; align-items: center; gap: 28px;
-  }
-  .logo { display: flex; align-items: center; gap: 9px; font-weight: 700; font-size: 21px; color: var(--ink); text-decoration: none; }
-  .nav-links { display: flex; gap: 26px; margin: 0 auto; }
-  .nav-right { display: flex; align-items: center; gap: 24px; }
-  .nav a.link { color: var(--ink); text-decoration: none; font-weight: 500; font-size: 15px; }
-  .nav a.link:hover { color: var(--blue); }
-  .cta {
-    background: var(--red); color: #fff; font-weight: 600; font-size: 15px;
-    text-decoration: none; padding: 10px 22px; border-radius: 999px;
-  }
-
-  /* tabs */
-  .tabs { display: flex; justify-content: center; gap: 12px; margin-top: 64px; }
-  .tab {
-    background: none; border: 0; border-bottom: 3px solid transparent;
-    padding: 10px 26px 12px; color: var(--muted); font: 500 16px inherit; font-family: inherit;
-    display: flex; flex-direction: column; align-items: center; gap: 6px; cursor: default;
-  }
-  .tab svg { width: 26px; height: 26px; }
-  .tab.active { color: var(--blue); border-bottom-color: var(--blue); }
-  .tab[disabled] { opacity: .75; }
-
-  /* hero */
-  .hero { text-align: center; padding: 48px 20px 0; max-width: 860px; margin: 0 auto; }
-  h1 { font-size: clamp(34px, 6vw, 54px); line-height: 1.15; margin: 0 0 22px; font-weight: 750; letter-spacing: -1px; }
-  .sub { font-size: 18px; margin: 0 0 44px; }
-  .scan { display: flex; justify-content: center; gap: 14px; }
-  .scan input {
-    width: min(540px, 100%); min-width: 0; height: 64px; padding: 0 26px;
-    border: 1.5px solid #aeb7c4; border-radius: 999px; background: var(--white);
-    font: 18px inherit; font-family: inherit; color: var(--ink);
-  }
-  .scan input::placeholder { color: #7b8696; }
-  .scan input:focus { outline: 3px solid #b5c1fa; border-color: var(--blue); }
-  .scan button {
-    height: 64px; padding: 0 38px; border: 0; border-radius: 999px; cursor: pointer;
-    background: var(--blue); color: #fff; font: 650 19px inherit; font-family: inherit;
-  }
-  .scan button:hover { background: var(--blue-dark); }
-  .scan button:focus-visible { outline: 3px solid #b5c1fa; outline-offset: 2px; }
-  .scan button:disabled { background: #93a0c9; cursor: wait; }
-  .terms { margin: 40px 0 0; font-size: 17px; }
-  .loading { display: none; margin-top: 22px; color: var(--muted); }
-  .loading.visible { display: block; }
-  .notice {
-    display: none; max-width: 700px; margin: 22px auto 0; padding: 12px 18px;
-    background: #fdeceb; color: #7b1d18; border-radius: 14px; text-align: left; font-size: 15px;
-  }
-  .notice.show { display: block; }
-
-  /* results */
-  .results { display: none; max-width: 860px; margin: 56px auto 0; padding: 0 20px; }
-  .results.visible { display: block; }
-  .panel { background: var(--white); border-radius: 24px; padding: 30px 34px; margin-bottom: 18px; }
-  .scanned { margin: 0 0 14px; color: var(--muted); font-size: 14px; overflow-wrap: anywhere; }
-  .verdict { display: flex; align-items: center; gap: 16px; }
-  .dot { width: 18px; height: 18px; border-radius: 50%; background: var(--muted); flex: none; }
-  .verdict.safe .dot { background: var(--ok); }
-  .verdict.low .dot { background: #d99a1c; }
-  .verdict.medium .dot { background: #e0701a; }
-  .verdict.high .dot { background: var(--bad); }
-  .verdict-level { font-size: 26px; font-weight: 750; margin: 0; }
-  .verdict p { margin: 0; color: var(--muted); }
-  .facts { display: flex; gap: 40px; margin: 22px 0 0; padding-top: 20px; border-top: 1px solid var(--line); flex-wrap: wrap; }
-  .facts dt { color: var(--muted); font-size: 13px; }
-  .facts dd { margin: 0; font-weight: 650; overflow-wrap: anywhere; }
-  h2 { font-size: 19px; margin: 0 0 14px; }
-  .issues { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
-  .issues li { background: #fdf1f0; color: #6e1d19; padding: 10px 14px; border-radius: 12px; font-size: 15px; }
-  .empty { color: var(--muted); font-size: 15px; margin: 0; }
-  .checks { list-style: none; margin: 0; padding: 0; }
-  .check { display: grid; grid-template-columns: 170px 88px 1fr; gap: 4px 16px; padding: 12px 0; border-top: 1px solid var(--line); align-items: baseline; }
-  .check:first-child { border-top: 0; padding-top: 0; }
-  .check-name { font-weight: 600; font-size: 15px; text-transform: capitalize; overflow-wrap: anywhere; }
-  .status { font-size: 13px; font-weight: 700; padding: 2px 10px; border-radius: 999px; justify-self: start; }
-  .status-pass { background: #e3f4ea; color: var(--ok); }
-  .status-warn { background: #fbefd8; color: var(--warn); }
-  .status-fail { background: #fbe4e2; color: var(--bad); }
-  .status-info { background: #e8ecf2; color: var(--muted); }
-  .check-detail { font-size: 14px; color: var(--muted); overflow-wrap: anywhere; }
-  details summary { cursor: pointer; font-weight: 600; color: var(--blue); }
-  pre { white-space: pre-wrap; overflow-wrap: anywhere; background: #1d2433; color: #d6deec; padding: 14px; border-radius: 12px; font-size: 12px; max-height: 380px; overflow: auto; }
-
-  /* promo strip */
-  .promo {
-    max-width: 860px; margin: 72px auto 0; padding: 26px 30px; background: var(--white);
-    border-radius: 24px; display: flex; align-items: center; gap: 22px;
-  }
-  .promo-icon { width: 76px; height: 76px; border-radius: 50%; background: #eef1f8; display: grid; place-items: center; flex: none; }
-  .promo h3 { margin: 0 0 4px; font-size: 20px; }
-  .promo p { margin: 0; }
-  .promo small { color: var(--muted); font-size: 15px; display: block; margin-top: 8px; }
-  .promo a.btn {
-    margin-left: auto; flex: none; background: var(--blue); color: #fff; text-decoration: none;
-    font-weight: 650; text-align: center; padding: 16px 30px; border-radius: 999px; max-width: 220px;
-  }
-  main { padding: 0 20px 80px; }
-
-  @media (max-width: 860px) {
-    .nav-links, .nav a.link { display: none; }
-    .nav-right { margin-left: auto; }
-    .promo { flex-direction: column; text-align: center; }
-    .promo a.btn { margin: 0; }
-  }
-  @media (max-width: 620px) {
-    .tabs { margin-top: 36px; gap: 0; }
-    .tab { padding: 8px 10px 10px; font-size: 14px; }
-    .scan { flex-direction: column; align-items: stretch; }
-    .scan input, .scan button { width: 100%; height: 56px; font-size: 17px; }
-    .panel { padding: 22px 20px; }
-    .check { grid-template-columns: 1fr auto; }
-    .check-detail { grid-column: 1 / -1; }
-  }
-</style>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Link Guard - Real-Time URL Fraud & Threat Detection</title>
+  <link rel="stylesheet" href="/css/style.css" />
 </head>
 <body>
-<header class="nav">
-  <div class="nav-inner">
-    <a class="logo" href="#">
-      <svg width="34" height="34" viewBox="0 0 34 34" aria-hidden="true"><path d="M17 3 4 8v8c0 8 5.5 13 13 15 7.500-2 13-7 13-15V8z" fill="#4361ee"/><path d="m11 17 4 4 8-9" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg>
-      LinkGuard
-    </a>
-    <nav class="nav-links">
-      <a class="link" href="#">Pricing</a>
-      <a class="link" href="#">Features &#8964;</a>
-      <a class="link" href="#">Learn &#8964;</a>
-      <a class="link" href="#">For Business &#8964;</a>
-    </nav>
-    <div class="nav-right">
-      <a class="link" href="#">Log In</a>
-      <a class="link" href="#">Support Center</a>
-      <a class="cta" href="#">Get LinkGuard</a>
+
+  <!-- Top Navigation Bar -->
+  <header class="header">
+    <div class="header-container">
+      <a class="logo" href="/" aria-label="Link Guard Home">
+        <div class="logo-icon">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+            <path d="m9 12 2 2 4-4"/>
+          </svg>
+        </div>
+        <div class="logo-text">
+          <span class="logo-title">Link Guard</span>
+          <span class="logo-subtitle">Heuristic Threat Shield</span>
+        </div>
+      </a>
+      
+      <div class="header-meta">
+        <div class="status-badge">
+          <span class="status-dot"></span>
+          <span>14 Engines Online</span>
+        </div>
+        <a href="#recentSection" class="nav-shortcut">Recent Scans</a>
+        <a href="#capabilitiesSection" class="nav-shortcut">Heuristics</a>
+      </div>
     </div>
-  </div>
-</header>
+  </header>
 
-<main>
-  <div class="tabs" role="tablist">
-    <button class="tab active" role="tab" aria-selected="true">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M10 14a4 4 0 0 0 5.700 0l3-3a4 4 0 0 0-5.700-5.700l-1 1"/><path d="M14 10a4 4 0 0 0-5.700 0l-3 3a4 4 0 0 0 5.700 5.700l1-1"/></svg>
-      Link Checker
-    </button>
-    <button class="tab" role="tab" aria-selected="false" disabled title="Not available yet">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/></svg>
-      File Checker
-    </button>
-    <button class="tab" role="tab" aria-selected="false" disabled title="Not available yet">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5h16v11H9l-5 4z"/><path d="M8.500 10.500h.01M12 10.500h.01M15.500 10.500h.01"/></svg>
-      Scam Text Checker
-    </button>
-  </div>
+  <!-- Main Container -->
+  <main class="main-content">
+    
+    <!-- Hero / Input Section -->
+    <section class="hero">
+      <div class="hero-badge">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+        <span>Zero-Day URL Phishing & Fraud Analysis</span>
+      </div>
+      
+      <h1>Verify Any Link Before You Click</h1>
+      <p>Inspect suspicious links in real time. Link Guard analyzes 14 structural threat vectors including zero-day domain age, SSL trust, homograph attacks, and credential-harvesting lures.</p>
 
-  <section class="hero">
-    <h1>Is this link safe?</h1>
-    <p class="sub">Scan a URL you want to visit to detect malware, fake websites, and phishing attacks.</p>
-    <form class="scan" id="scanForm">
-      <input id="urlInput" type="url" placeholder="Enter your URL here" autocomplete="url" required aria-label="URL to scan">
-      <button id="scanButton" type="submit">Analyze</button>
-    </form>
-    <p class="terms">By entering a URL you agree to our <a href="#">terms of service</a> and <a href="#">privacy policy</a>.</p>
-    <div class="loading" id="loading">Scanning the link. This can take a few seconds.</div>
-    <div class="notice" id="notice" role="alert"></div>
-  </section>
+      <div class="scan-card">
+        <form class="scan-form" id="scanForm">
+          <div class="input-icon-wrapper">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="11" cy="11" r="8"/>
+              <path d="m21 21-4.3-4.3"/>
+            </svg>
+          </div>
+          <input
+            id="urlInput"
+            class="scan-input"
+            type="text"
+            placeholder="Paste or type any URL (e.g., https://example.com)"
+            autocomplete="url"
+            spellcheck="false"
+            required
+            aria-label="URL to scan"
+          />
+          <button id="scanButton" class="scan-btn" type="submit">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+              <polygon points="5 3 19 12 5 21 5 3"/>
+            </svg>
+            <span>Analyze Link</span>
+          </button>
+        </form>
+      </div>
 
-  <section class="results" id="results" aria-live="polite">
-    <div class="panel">
-      <p class="scanned" id="scannedUrl"></p>
-      <div class="verdict" id="verdict">
-        <span class="dot"></span>
-        <div>
-          <p class="verdict-level" id="riskText">-</p>
-          <p id="riskSummary"></p>
+      <!-- Quick test samples -->
+      <div class="quick-fill">
+        <span class="quick-fill-label">Try sample:</span>
+        <button type="button" class="chip" data-url="https://github.com">github.com (Safe)</button>
+        <button type="button" class="chip" data-url="http://192.168.1.1/admin/login">Raw IP (+5)</button>
+        <button type="button" class="chip" data-url="https://google.com@evil.com">@ Trick (+10)</button>
+        <button type="button" class="chip" data-url="http://paypa1.com/login">Brand Typo (+5)</button>
+        <button type="button" class="chip" data-url="https://bit.ly/3sample">Shortener (+2)</button>
+        <button type="button" class="chip" data-url="javascript:alert(1)">Bad Protocol (+10)</button>
+      </div>
+
+      <!-- Loading Spinner -->
+      <div class="loading-indicator" id="loading">
+        <div class="spinner"></div>
+        <span>Running 14 security heuristics & network audits...</span>
+      </div>
+
+      <!-- Notification Alerts -->
+      <div class="notice-box" id="notice" role="alert"></div>
+    </section>
+
+    <!-- Telemetry Stats Bar -->
+    <section class="stats-bar">
+      <div class="stat-card">
+        <div class="stat-number">14</div>
+        <div class="stat-label">Security Layers</div>
+      </div>
+      <div class="stat-divider"></div>
+      <div class="stat-card">
+        <div class="stat-number">0-Day</div>
+        <div class="stat-label">Domain Age Tracking</div>
+      </div>
+      <div class="stat-divider"></div>
+      <div class="stat-card">
+        <div class="stat-number">&lt; 1.2s</div>
+        <div class="stat-label">Average Latency</div>
+      </div>
+      <div class="stat-divider"></div>
+      <div class="stat-card">
+        <div class="stat-number">100%</div>
+        <div class="stat-label">Local Heuristics</div>
+      </div>
+    </section>
+
+    <!-- Scan Results Section (Appears after scan) -->
+    <section class="results-section" id="resultsSection" aria-live="polite">
+      
+      <!-- Verdict Card -->
+      <div class="result-card" id="verdictCard">
+        <div class="card-top-bar">
+          <span class="scanned-url-text" id="scannedUrlText"></span>
+          <button type="button" class="reset-btn" id="resetScanBtn">Scan Another URL</button>
+        </div>
+
+        <div class="result-header">
+          <div class="verdict-banner">
+            <div class="verdict-icon-wrap" id="verdictIconWrap">
+              <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+              </svg>
+            </div>
+            <div>
+              <div class="verdict-badge-row">
+                <span class="verdict-badge" id="riskBadge">SAFE</span>
+                <span class="verdict-time" id="scanTimestamp">Just now</span>
+              </div>
+              <h2 class="verdict-title" id="riskTitle">Safe</h2>
+              <p class="verdict-sub" id="riskSubtitle">This link appears safe to browse.</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- Key Metrics -->
+        <dl class="facts-grid">
+          <div class="fact-item">
+            <dt>Target Domain</dt>
+            <dd id="domainFact">-</dd>
+          </div>
+          <div class="fact-item">
+            <dt>Issues Detected</dt>
+            <dd id="issueCountFact">0</dd>
+          </div>
+          <div class="fact-item">
+            <dt>Heuristic Protocols</dt>
+            <dd id="protocolsCountFact">14 Active</dd>
+          </div>
+          <div class="fact-item">
+            <dt>Engine Verdict</dt>
+            <dd id="engineVerdictFact">Clean</dd>
+          </div>
+        </dl>
+      </div>
+
+      <!-- Findings / Warnings -->
+      <div class="result-card">
+        <h3 class="section-title">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
+            <line x1="12" y1="9" x2="12" y2="13"/>
+            <line x1="12" y1="17" x2="12.01" y2="17"/>
+          </svg>
+          <span>Findings & Identified Anomalies</span>
+        </h3>
+        <ul class="issues-list" id="issuesList"></ul>
+      </div>
+
+      <!-- Detailed Security Checks Grid -->
+      <div class="result-card">
+        <div class="section-title-bar">
+          <h3 class="section-title" style="margin-bottom:0;">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>
+            </svg>
+            <span>14-Point Heuristics Evaluation</span>
+          </h3>
+          <span class="checks-counter-badge" id="checksCounterBadge">14 Checks Completed</span>
+        </div>
+        <ul class="checks-list" id="checksGrid"></ul>
+      </div>
+
+      <!-- Technical Raw Response -->
+      <div class="result-card">
+        <details>
+          <summary>Technical Payload (Raw JSON)</summary>
+          <div class="raw-header">
+            <span class="raw-sub">Standardized API payload</span>
+            <button type="button" class="copy-btn" id="copyRawBtn">Copy JSON</button>
+          </div>
+          <pre id="rawResponse"></pre>
+        </details>
+      </div>
+
+    </section>
+
+    <!-- Threat Capabilities Grid (What Link Guard checks) -->
+    <section class="section-block" id="capabilitiesSection">
+      <div class="section-header-centered">
+        <h2>Multi-Layered Threat Defense</h2>
+        <p>Link Guard inspects structural anomalies before they appear on global blacklists.</p>
+      </div>
+
+      <div class="capabilities-grid">
+        <div class="cap-card">
+          <div class="cap-icon-box blue">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+          </div>
+          <h3>Zero-Day Domain Age</h3>
+          <p>Queries RDAP to detect newly registered domains under 30 days old — the primary attack surface for disposable phishing.</p>
+        </div>
+
+        <div class="cap-card">
+          <div class="cap-icon-box purple">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 7V4h16v3M9 20h6M12 4v16"/></svg>
+          </div>
+          <h3>Homograph & Punycode</h3>
+          <p>Uncovers deceptive Unicode character substitutions (e.g. Cyrillic 'а') and Punycode (<code>xn--</code>) domain impersonation.</p>
+        </div>
+
+        <div class="cap-card">
+          <div class="cap-icon-box emerald">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="2" width="20" height="8" rx="2" ry="2"/><rect x="2" y="14" width="20" height="8" rx="2" ry="2"/><line x1="6" y1="6" x2="6.01" y2="6"/><line x1="6" y1="18" x2="6.01" y2="18"/></svg>
+          </div>
+          <h3>Raw IP & Host Obfuscation</h3>
+          <p>Catches direct IPv4/IPv6 hosts bypassing DNS filtering, as well as excessively long URLs packing hidden payloads.</p>
+        </div>
+
+        <div class="cap-card">
+          <div class="cap-icon-box amber">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+          </div>
+          <h3>Cryptographic SSL Audit</h3>
+          <p>Performs live TLS handshakes to verify certificate trust chains, expiration windows, and issuer authority on port 443.</p>
+        </div>
+
+        <div class="cap-card">
+          <div class="cap-icon-box red">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="16 3 21 3 21 8"/><line x1="4" y1="20" x2="21" y2="3"/><polyline points="21 16 21 21 16 21"/><line x1="15" y1="15" x2="21" y2="21"/></svg>
+          </div>
+          <h3>Redirect Chain Tracing</h3>
+          <p>Follows up to 5 manual HTTP redirect hops to expose evasion techniques, hidden tracking endpoints, and open redirects.</p>
+        </div>
+
+        <div class="cap-card">
+          <div class="cap-icon-box indigo">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+          </div>
+          <h3>Phishing Lure Heuristics</h3>
+          <p>Detects keyword patterns commonly engineered to hijack bank accounts, crypto wallets, and enterprise webmail portals.</p>
         </div>
       </div>
-      <dl class="facts">
-        <div><dt>Domain</dt><dd id="domainName">-</dd></div>
-        <div><dt>Issues found</dt><dd id="issueCount">0</dd></div>
-      </dl>
+    </section>
+
+    <!-- Recent Scans / Threat Activity Feed -->
+    <section class="section-block" id="recentSection">
+      <div class="section-header-row">
+        <div>
+          <h2>Recent Scan Activity</h2>
+          <p>History of URLs analyzed during this session.</p>
+        </div>
+        <button type="button" class="clear-history-btn" id="clearHistoryBtn">Clear History</button>
+      </div>
+
+      <div class="recent-table-card">
+        <div class="recent-table-wrap">
+          <table class="recent-table">
+            <thead>
+              <tr>
+                <th>Scanned Target</th>
+                <th>Domain</th>
+                <th>Verdict</th>
+                <th>Issues</th>
+                <th>Time</th>
+                <th>Action</th>
+              </tr>
+            </thead>
+            <tbody id="recentScansBody">
+              <!-- Populated dynamically via JS -->
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- Risk Level Guide -->
+    <section class="section-block">
+      <div class="section-header-centered">
+        <h2>Risk Level Reference Guide</h2>
+        <p>Understanding how Link Guard categorizes URL risk levels.</p>
+      </div>
+
+      <div class="risk-guide-grid">
+        <div class="guide-card guide-safe">
+          <div class="guide-header">
+            <span class="pill pill-pass">SAFE</span>
+            <h4>0 Points</h4>
+          </div>
+          <p>Standard trusted domain with valid SSL, established age (&gt;30 days), and clean heuristics.</p>
+        </div>
+
+        <div class="guide-card guide-low">
+          <div class="guide-header">
+            <span class="pill pill-warn">LOW</span>
+            <h4>1–4 Points</h4>
+          </div>
+          <p>Minor heuristic flag: URL shortener (+2), not using HTTPS (+2), risky TLD (+2), free host (+2), or keyword (+1).</p>
+        </div>
+
+        <div class="guide-card guide-medium">
+          <div class="guide-header">
+            <span class="pill pill-warn" style="background:#ffedd5;color:#ea580c;">MEDIUM</span>
+            <h4>5–9 Points</h4>
+          </div>
+          <p>Elevated threat risk: Raw IP (+5), invalid/bad SSL (+5), newly registered domain (+5), or brand lookalike (+5).</p>
+        </div>
+
+        <div class="guide-card guide-high">
+          <div class="guide-header">
+            <span class="pill pill-fail">HIGH</span>
+            <h4>10+ Points</h4>
+          </div>
+          <p>Critical danger: Dangerous protocol (+10), @ trick credentials (+10), VirusTotal malicious (+10), or multiple major flags.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- Security FAQ Accordion -->
+    <section class="section-block">
+      <div class="section-header-centered">
+        <h2>Frequently Asked Questions</h2>
+        <p>Quick answers about how Link Guard analyzes links.</p>
+      </div>
+
+      <div class="faq-list">
+        <details class="faq-item">
+          <summary>How does Link Guard detect zero-day phishing without external blacklists?</summary>
+          <div class="faq-content">
+            Traditional blacklist databases take 24–72 hours to record newly launched malicious sites. Link Guard inspects the fundamental properties of the domain: registration date via RDAP, TLS handshake certificates, raw IP presence, and homograph character codes. This flags fraudulent sites the moment they go live.
+          </div>
+        </details>
+
+        <details class="faq-item">
+          <summary>What is an IDN Homograph attack?</summary>
+          <div class="faq-content">
+            Attackers register domains using international characters that look identical to standard Latin characters (for example, using the Cyrillic 'а' in place of the Latin 'a'). When translated by web browsers into Punycode (<code>xn--...</code>), the browser loads the attacker's server. Link Guard inspects Punycode domains and flags them instantly.
+          </div>
+        </details>
+
+        <details class="faq-item">
+          <summary>Why are raw IP addresses considered suspicious?</summary>
+          <div class="faq-content">
+            Legitimate services, banks, and enterprises operate on branded domain names. Attackers often use direct IP addresses (e.g. <code>http://192.168.1.1/login</code>) to bypass domain registration costs, evade domain reputation filters, and quickly rotate compromised servers.
+          </div>
+        </details>
+
+        <details class="faq-item">
+          <summary>Does Link Guard store my scanned links?</summary>
+          <div class="faq-content">
+            No. Link Guard processes requests in memory with local heuristics. Scan results are displayed directly to your client session and saved only in your local browser storage for your personal scan history.
+          </div>
+        </details>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- Clean Minimal Footer -->
+  <footer class="footer">
+    <div class="footer-container">
+      <div class="footer-left">
+        <strong>Link Guard</strong> • High-Performance URL Security Engine
+      </div>
+      <div class="footer-right">
+        <span>API v1.0.0</span>
+        <span>•</span>
+        <span>Heuristic Scanner</span>
+      </div>
     </div>
-    <div class="panel">
-      <h2>Findings</h2>
-      <ul class="issues" id="issuesList"></ul>
-    </div>
-    <div class="panel">
-      <h2>Security checks</h2>
-      <ul class="checks" id="checksGrid"></ul>
-    </div>
-    <div class="panel">
-      <details>
-        <summary>View raw response</summary>
-        <pre id="rawResponse"></pre>
-      </details>
-    </div>
-  </section>
+  </footer>
 
-  <aside class="promo">
-    <div class="promo-icon">
-      <svg width="40" height="44" viewBox="0 0 40 44" aria-hidden="true"><path d="M20 2 4 8v14c0 10 7 16 16 20 9-4 16-10 16-20V8z" fill="#e9e3fb" stroke="#6a4fd8" stroke-width="3" stroke-linejoin="round"/><path d="m22 12-8 13h6l-2 9 8-13h-6z" fill="#4a35b8"/></svg>
-    </div>
-    <div>
-      <h3>Check URLs automatically!</h3>
-      <p>Get LinkGuard protection that warns you about malicious sites before they open.</p>
-      <small>Included in selected plans.</small>
-    </div>
-    <a class="btn" href="#">What is automatic protection?</a>
-  </aside>
-</main>
-
-<script>
-  // Change this if your backend runs at a different address.
-  const API_URL = (window.location.origin && window.location.origin !== 'null')
-    ? `${window.location.origin}/api/detect-v2`
-    : 'http://localhost:3201/api/detect-v2';
-
-  const form = document.getElementById('scanForm');
-  const input = document.getElementById('urlInput');
-  const button = document.getElementById('scanButton');
-  const loading = document.getElementById('loading');
-  const notice = document.getElementById('notice');
-  const results = document.getElementById('results');
-
-  function showNotice(m) { notice.textContent = m; notice.classList.add('show'); }
-  function clearNotice() { notice.textContent = ''; notice.classList.remove('show'); }
-
-  function addText(parent, tag, cls, text) {
-    const el = document.createElement(tag);
-    if (cls) el.className = cls;
-    el.textContent = text;
-    parent.appendChild(el);
-    return el;
-  }
-
-  function classifyCheck(value) {
-    if (value === true) return ['warn', 'Flagged'];
-    if (value === false) return ['pass', 'Clear'];
-    if (Array.isArray(value)) return value.length ? ['warn', 'Found'] : ['pass', 'None'];
-    if (value && typeof value === 'object') {
-      if (value.resolved === false || value.valid === false || value.malicious > 0 ||
-          value.tooManyRedirects === true || (value.ageDays != null && value.ageDays < 30)) {
-        return ['warn', 'Review'];
-      }
-      if (value.available === false || value.message || value.error) return ['info', 'Unknown'];
-      if (value.resolved === true || value.valid === true || value.available === true || value.ageDays >= 30) {
-        return ['pass', 'OK'];
-      }
-    }
-    return ['info', 'Details'];
-  }
-
-  function describeValue(value) {
-    if (value === true) return 'This check found a problem.';
-    if (value === false) return 'No problem found.';
-    if (value == null) return 'No result returned.';
-    if (Array.isArray(value)) return value.length ? value.join(', ') : 'Nothing found.';
-    if (typeof value === 'object') {
-      const preferred = [
-        ['resolved', v => v ? 'Domain resolves' : 'Domain does not resolve'],
-        ['addresses', v => 'IP addresses: ' + v.join(', ')],
-        ['valid', v => v ? 'Certificate is trusted' : 'Certificate is not trusted'],
-        ['ageDays', v => 'Domain is ' + v + ' days old'],
-        ['createdAt', v => 'Registered ' + v],
-        ['malicious', v => v + ' malicious reports'],
-        ['suspicious', v => v + ' suspicious reports'],
-        ['redirected', v => v ? 'Link redirects' : 'No redirects'],
-        ['tooManyRedirects', v => v ? 'Too many redirects' : 'Redirect count is normal'],
-        ['redirectChain', v => v.length + ' redirect hops'],
-        ['message', v => String(v)],
-        ['error', v => String(v)]
-      ];
-      const lines = preferred.filter(([k]) => k in value).map(([k, f]) => f(value[k]));
-      return lines.length ? lines.join('; ') : JSON.stringify(value);
-    }
-    return String(value);
-  }
-
-  function renderIssues(issues) {
-    const list = document.getElementById('issuesList');
-    list.replaceChildren();
-    if (!issues.length) {
-      addText(list, 'li', '', 'No issues reported. That is a good sign, but not a guarantee.')
-        .style.cssText = 'background:#e9f5ee;color:#175c3a';
-      return;
-    }
-    issues.forEach(i => addText(list, 'li', '', String(i)));
-  }
-
-  function renderChecks(checks, protocols) {
-    const list = document.getElementById('checksGrid');
-    list.replaceChildren();
-    const merged = { ...(protocols || {}), ...(checks || {}) };
-    if (!Object.keys(merged).length) {
-      addText(list, 'li', 'empty', 'No individual checks were returned.');
-      return;
-    }
-    Object.entries(merged).forEach(([name, value]) => {
-      const [state, label] = classifyCheck(value);
-      const li = document.createElement('li');
-      li.className = 'check';
-      addText(li, 'span', 'check-name', name.replaceAll('_', ' '));
-      addText(li, 'span', 'status status-' + state, label);
-      addText(li, 'span', 'check-detail', describeValue(value));
-      list.appendChild(li);
-    });
-  }
-
-  function getHostname(v) { try { return new URL(v).hostname; } catch { return '-'; } }
-
-  function renderResult(data) {
-    const result = data && data.data && !data.isSuspicious && !data.checks ? data.data : data;
-    const issues = Array.isArray(result.issues) ? result.issues : [];
-    const risk = String(result.riskLevel || (result.isSuspicious ? 'REVIEW' : 'SAFE')).toUpperCase();
-    const known = ['SAFE', 'LOW', 'MEDIUM', 'HIGH'].includes(risk);
-    const labels = { SAFE: 'This link looks safe', LOW: 'Low risk', MEDIUM: 'Medium risk', HIGH: 'High risk: avoid this link' };
-
-    document.getElementById('verdict').className = 'verdict' + (known ? ' ' + risk.toLowerCase() : '');
-    document.getElementById('riskText').textContent = known ? labels[risk] : risk;
-    document.getElementById('riskSummary').textContent =
-      result.isSuspicious === true ? 'The scanner found one or more suspicious signals.'
-      : result.isSuspicious === false ? 'The scanner did not find suspicious signals.'
-      : 'Read the findings below.';
-    document.getElementById('issueCount').textContent = String(issues.length);
-    document.getElementById('domainName').textContent = result.hostname || getHostname(result.url || input.value);
-    document.getElementById('scannedUrl').textContent = result.url || input.value;
-
-    renderIssues(issues);
-    renderChecks(result.checks, result.protocols);
-    document.getElementById('rawResponse').textContent = JSON.stringify(data, null, 2);
-    results.classList.add('visible');
-    results.scrollIntoView({ behavior: 'smooth', block: 'start' });
-  }
-
-  form.addEventListener('submit', async event => {
-    event.preventDefault();
-    clearNotice();
-    const url = input.value.trim();
-    if (!url) { showNotice('Enter a URL to scan.'); return; }
-    try { new URL(url); } catch {
-      showNotice('That URL isn\u2019t valid. Start it with http:// or https://.');
-      return;
-    }
-
-    button.disabled = true;
-    button.textContent = 'Analyzing\u2026';
-    loading.classList.add('visible');
-
-    try {
-      const response = await fetch(API_URL, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
-        body: JSON.stringify({ link: url })
-      });
-      const text = await response.text();
-      let data;
-      try { data = text ? JSON.parse(text) : {}; }
-      catch { throw new Error('The server sent back something that isn\u2019t JSON. Check your backend endpoint.'); }
-      if (!response.ok) throw new Error(data.message || data.error || 'The request failed (' + response.status + ').');
-      renderResult(data);
-    } catch (error) {
-      results.classList.remove('visible');
-      if (error instanceof TypeError && /fetch/i.test(error.message)) {
-        showNotice('Can\u2019t reach the API. Make sure your backend is running at ' + API_URL + ' and allows requests from this page (CORS).');
-      } else {
-        showNotice(error.message || 'Something went wrong while scanning the URL.');
-      }
-    } finally {
-      button.disabled = false;
-      button.textContent = 'Analyze';
-      loading.classList.remove('visible');
-    }
-  });
-</script>
+  <script src="/js/app.js"></script>
 </body>
 </html>

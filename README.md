@@ -21,7 +21,7 @@ A fast Node.js/Express service for detecting fraudulent, phishing, and malicious
 ### 2. Installation
 ```bash
 git clone <repo-url>
-cd link-guard
+cd fraud-detection-link
 npm install
 ```
 
@@ -40,10 +40,10 @@ The server starts at: **`http://localhost:3201`**
 
 ## API Reference
 
-### Scan URL (`POST /api/detect-v2`)
+### Scan URL (`POST /api/detect`)
 Performs 14 security checks including local heuristics, DNS/SSL inspection, and domain age analysis.
 
-- **Endpoint:** `POST /api/detect-v2`
+- **Endpoint:** `POST /api/detect` (or `POST /api/detect-v2`)
 - **Headers:** `Content-Type: application/json`
 - **Body:**
   ```json
@@ -55,84 +55,115 @@ Performs 14 security checks including local heuristics, DNS/SSL inspection, and 
 #### Response Example
 ```json
 {
-  "url": "http://suspicious-bank-login.xyz",
-  "hostname": "suspicious-bank-login.xyz",
-  "isSuspicious": true,
-  "riskLevel": "HIGH",
-  "issues": [
-    "Suspicious keywords: login, bank",
-    "Recently registered domain (less than 30 days)",
-    "Invalid or untrusted SSL certificate"
-  ],
-  "checks": {
-    "HTTP_PROTOCOL": true,
-    "HOSTNAME": true,
-    "URL_LENGTH": true,
-    "SUSPICIOUS_KEYWORDS": ["login", "bank"],
-    "SHORT_URL": false,
-    "PUNYCODE": false,
-    "HOMOGRAPH_ATTACK": false,
-    "SUBDOMAIN_CHECK": false,
-    "EMAIL_DOMAIN_CHECK": false,
-    "DNSLOOKUP": {
-      "resolved": true,
-      "addresses": ["93.184.216.34"]
+  "success": true,
+  "message": "Scan completed successfully",
+  "data": {
+    "url": "http://suspicious-bank-login.xyz",
+    "hostname": "suspicious-bank-login.xyz",
+    "mainDomain": "suspicious-bank-login.xyz",
+    "score": 13,
+    "isSuspicious": true,
+    "riskLevel": "HIGH",
+    "issues": [
+      "Not using HTTPS",
+      "Risky top-level domain (TLD): .xyz",
+      "Suspicious keywords: login, bank",
+      "Recently registered domain (12 days old)",
+      "Invalid or untrusted SSL certificate"
+    ],
+    "checks": {
+      "HTTP_PROTOCOL": true,
+      "HOSTNAME": true,
+      "URL_LENGTH": true,
+      "SUSPICIOUS_KEYWORDS": ["login", "bank"],
+      "SHORT_URL": false,
+      "PUNYCODE": false,
+      "HOMOGRAPH_ATTACK": false,
+      "SUBDOMAIN_CHECK": false,
+      "EMAIL_DOMAIN_CHECK": false,
+      "DNSLOOKUP": {
+        "resolved": true,
+        "addresses": ["93.184.216.34"]
+      },
+      "DOMAIN_AGE": {
+        "available": true,
+        "createdAt": "2026-11-08T00:00:00.000Z",
+        "ageDays": 12
+      },
+      "SSL_CERTIFICATE": {
+        "valid": false,
+        "error": "certificate has expired"
+      },
+      "REDIRECT_CHECK": {
+        "redirected": false,
+        "tooManyRedirects": false,
+        "redirectChain": []
+      },
+      "BLACKLIST_CHECK": {
+        "available": false
+      }
     },
-    "DOMAIN_AGE": {
-      "available": true,
-      "createdAt": "2026-11-08T00:00:00.000Z",
-      "ageDays": 12
-    },
-    "SSL_CERTIFICATE": {
-      "valid": false,
-      "error": "certificate has expired"
-    },
-    "REDIRECT_CHECK": {
-      "redirected": false,
-      "tooManyRedirects": false,
-      "redirectChain": []
-    },
-    "BLACKLIST_CHECK": {
-      "available": false
+    "PROTOCOLS": {
+      "HTTP_PROTOCOL": true,
+      "HOSTNAME": true,
+      "PUNYCODE": true,
+      "DNSLOOKUP": true,
+      "URL_LENGTH": true,
+      "SUSPICIOUS_KEYWORDS": true,
+      "SHORT_URL": true,
+      "DOMAIN_AGE": true,
+      "SSL_CERTIFICATE": true,
+      "REDIRECT_CHECK": true,
+      "BLACKLIST_CHECK": true,
+      "HOMOGRAPH_ATTACK": true,
+      "SUBDOMAIN_CHECK": true,
+      "EMAIL_DOMAIN_CHECK": true
     }
-  },
-  "protocols": {
-    "HTTP_PROTOCOL": true,
-    "HOSTNAME": true,
-    "PUNYCODE": true,
-    "DNSLOOKUP": true,
-    "URL_LENGTH": true,
-    "SUSPICIOUS_KEYWORDS": true,
-    "SHORT_URL": true,
-    "DOMAIN_AGE": true,
-    "SSL_CERTIFICATE": true,
-    "REDIRECT_CHECK": true,
-    "BLACKLIST_CHECK": true,
-    "HOMOGRAPH_ATTACK": true,
-    "SUBDOMAIN_CHECK": true,
-    "EMAIL_DOMAIN_CHECK": true
   }
 }
 ```
 
 ---
 
+## Threat Scoring & Points Engine
+
+Link Guard evaluates links using a weighted scoring model:
+
+| Threat Category | Weight | Description |
+| :--- | :--- | :--- |
+| **Critical Threats** | **+10 Points** | Dangerous protocols (`javascript:`, `data:`, `file:`), VirusTotal malicious flag, or embedded `@` credential spoofing |
+| **High Threats** | **+5 Points** | Raw IP host (IPv4/IPv6), invalid/expired SSL certificate, new domain (&lt;30 days via RDAP), or brand lookalike / typo-squatting |
+| **Suspicious Indicators** | **+2 Points** | URL shortener, unencrypted HTTP (`http://`), risky TLD, free hosting site, non-standard port, or redirect to a different domain |
+| **Lure Patterns** | **+1 Point** | Suspicious keywords (matching whole words on `%xx`-decoded URLs) |
+
+### Risk Tiers
+- **HIGH (`score >= 10`)**: Critical threat detected. Immediate avoidance recommended.
+- **MEDIUM (`score >= 5`)**: Multiple suspicious indicators. High vigilance required.
+- **LOW (`score >= 1`)**: Minor heuristic signals (e.g., shortener or generic keyword).
+- **SAFE (`score === 0`)**: Clean link with no detected anomalies.
+
+---
+
 ## Heuristics Overview
 
-| Check | Description |
-| :--- | :--- |
-| **Protocol** | Blocks non-HTTP/HTTPS protocols (`javascript:`, `data:`, `file:`) |
-| **Hostname / IP** | Flags raw IP addresses used instead of domain names |
-| **URL Length** | Identifies abnormally long URLs (> 2048 chars) often used for obfuscation |
-| **Keywords** | Detects credential/financial lures (`login`, `verify`, `banking`, `wallet`, etc.) |
-| **URL Shorteners** | Detects masking services (`bit.ly`, `tinyurl.com`, `t.co`, etc.) |
-| **Homograph & Punycode**| Uncovers internationalized domain spoofing (`xn--`) |
-| **Subdomain Depth** | Flags excessive nested subdomains (> 4 levels) |
-| **Email Keywords** | Detects credential-harvesting webmail impersonations |
-| **DNS Lookup** | Verifies active DNS A/AAAA records |
-| **Domain Age** | Queries RDAP to flag domains registered < 30 days ago |
-| **SSL/TLS Validation** | Validates HTTPS certificates, issuers, and validity windows |
-| **Redirect Tracing** | Follows HTTP hops and flags redirect chains / loops |
+| Check | Points | Description |
+| :--- | :--- | :--- |
+| **Protocol Safety** | +10 | Blocks dangerous protocols (`javascript:`, `data:`, `file:`) immediately |
+| **@ Credential Trick** | +10 | Detects embedded credentials in URL (`user:pass@host`) masking destination |
+| **Internal SSRF Shield** | +10 | Prevents fetching private ranges (`127.`, `10.`, `192.168.`, `172.16–31.`, `169.254.`, `::1`) |
+| **Raw IP Hostname** | +5 | Flags bare IPv4 and IPv6 addresses (with brackets stripped) |
+| **SSL / TLS Trust** | +5 | Validates certificate validity dates, authority chain, and handshakes |
+| **Domain Registration Age**| +5 | Queries RDAP using the main root domain to flag domains &lt; 30 days old |
+| **Brand Lookalike Defense**| +5 | Levenshtein distance & leetspeak checks against major brands & banks |
+| **HTTPS Enforcement** | +2 | Flags plain unencrypted `http://` connections |
+| **URL Shorteners** | +2 | Detects masking services (`bit.ly`, `tinyurl`, `rb.gy`, `t.ly`, etc.) |
+| **Risky TLDs** | +2 | Identifies high-abuse TLDs (`.zip`, `.mov`, `.xyz`, `.top`, `.tk`, etc.) |
+| **Free Hosting Abuse** | +2 | Identifies staging sites (`github.io`, `vercel.app`, `ngrok`, etc.) |
+| **Non-Standard Ports** | +2 | Flags ports other than standard 80 and 443 |
+| **Redirect Destination** | +2 | Follows redirect chain safely and flags destination domain differences |
+| **Keywords (Decoded)** | +1 | Scans `%xx`-decoded URLs matching whole words only (e.g. `login`, `bank`) |
+| **Punycode / Homograph** | +5 | Uncovers Unicode spoofing (counted once to avoid false-alarm inflation) |
+| **Subdomain Depth** | +2 | Measures prefix depth strictly in front of the main domain |
 
 ---
 
@@ -140,15 +171,21 @@ Performs 14 security checks including local heuristics, DNS/SSL inspection, and 
 
 ```text
 link-guard/
-├── app.js                          # Express entry point (port 3201)
+├── app.js                          # Express entry point & global error catcher (port 3201)
 ├── routes/
-│   └── routerIndex.js              # Route definitions (/detect-v2)
+│   └── routerIndex.js              # Route definitions (/detect, /detect-v2)
 ├── controllers/
-│   └── link.detection.controller.js# Request validation (Joi) & controllers
+│   └── linkDetectionController.js  # Request validation (Joi) & custom detection
 ├── services/
 │   └── scanlink.js                 # 14-point heuristic scanning engine
+├── utils/
+│   └── responseHandler.js          # Standardized response helper functions
 ├── views/
-│   └── index.html                 # Interactive web testing client
+│   ├── index.html                  # Semantic frontend interface
+│   ├── css/
+│   │   └── style.css               # Responsive design & theme
+│   └── js/
+│       └── app.js                  # Frontend client application script
 ├── .env.example                    # Template for environment variables (optional)
 └── package.json
 ```
@@ -158,7 +195,7 @@ link-guard/
 ## Testing via cURL
 
 ```bash
-curl -X POST http://localhost:3201/api/detect-v2 \
+curl -X POST http://localhost:3201/api/detect \
   -H "Content-Type: application/json" \
   -d '{"link": "https://google.com"}'
 ```
@@ -167,5 +204,4 @@ curl -X POST http://localhost:3201/api/detect-v2 \
 
 ## Web Interface
 
-The web interface is served directly by the Express server. Once the server is running, visit:
-**`http://localhost:3201`** in your browser.
+To use the interactive dashboard, open `views/index.html` in your browser while the Express server is running on port 3201.
