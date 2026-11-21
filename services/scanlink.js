@@ -1,7 +1,7 @@
 const dns = require('node:dns/promises');
 const net = require('node:net');
 const tls = require('node:tls');
-const { domainToASCII } = require('node:url');
+const { domainToASCII, domainToUnicode } = require('node:url');
 
 const PROTOCOLS = {
   HTTP_PROTOCOL: false,
@@ -231,13 +231,45 @@ function checkSubdomains(hostname, mainDomain) {
   return prefixPartsCount > 3;
 }
 
-// Check homograph / Punycode
+// Legitimate brand domains where auth keywords (login, signin) are expected and safe
+const OFFICIAL_BRAND_DOMAINS = [
+  'google.com', 'apple.com', 'microsoft.com', 'amazon.com',
+  'facebook.com', 'netflix.com', 'chase.com', 'wellsfargo.com',
+  'citibank.com', 'citi.com', 'bankofamerica.com', 'hsbc.com',
+  'barclays.com', 'barclays.co.uk', 'hdfcbank.com', 'icicibank.com',
+  'sbi.co.in', 'github.com', 'freecodecamp.org'
+];
+
+function isLegitimateBrandDomain(mainDomain) {
+  if (!mainDomain) return false;
+  return OFFICIAL_BRAND_DOMAINS.some(d => mainDomain === d || mainDomain.endsWith('.' + d));
+}
+
+// Check homograph / Punycode (distinguishing malicious spoofing from valid language IDNs like münchen.de)
 function checkHomograph(hostname) {
   const ascii = domainToASCII(hostname);
+  const unicode = domainToUnicode(hostname);
+  const isPuny = hostname.includes('xn--') || ascii.includes('xn--');
+
+  if (!isPuny) {
+    return { isPunycode: false, isAttack: false, ascii, unicode };
+  }
+
+  // Detect homoglyph spoofing on decoded unicode representation:
+  const hasCyrillic = /[\u0400-\u04FF]/.test(unicode);
+  const hasGreek = /[\u0370-\u03FF]/.test(unicode);
+  const hasLatin = /[a-zA-Z]/.test(unicode);
+  const isMixedScript = (hasCyrillic || hasGreek) && hasLatin;
+
+  // Cyrillic or Greek targeting Latin generic TLDs (.com, .net, .org)
+  const isTargetingGeneric = ascii.endsWith('.com') || ascii.endsWith('.net') || ascii.endsWith('.org');
+  const isAttack = Boolean(isMixedScript || hasCyrillic || hasGreek || (isTargetingGeneric && (hasCyrillic || hasGreek)));
 
   return {
-    isPunycode: hostname.includes('xn--') || ascii.includes('xn--'),
-    ascii
+    isPunycode: isPuny,
+    isAttack,
+    ascii,
+    unicode
   };
 }
 
@@ -246,9 +278,35 @@ function checkBrandLookalike(hostname, mainDomain) {
   const issues = [];
   const cleanHost = hostname.toLowerCase();
   const cleanMain = mainDomain.toLowerCase();
+  const unicodeMain = domainToUnicode(cleanMain).toLowerCase();
   const mainName = cleanMain.split('.')[0];
+  const unicodeName = unicodeMain.split('.')[0];
 
-  // 1. Brand name appears in hostname, but the main domain is not the brand's real domain
+  // Skip brand lookalike check on known URL shorteners
+  if (isShortUrl(cleanHost)) {
+    return { isLookalike: false, issues: [] };
+  }
+
+  // 1. Cyrillic / Greek homoglyph brand spoofing (e.g., аpple -> apple)
+  const cyrillicNormalized = unicodeName
+    .replace(/\u0430/g, 'a')
+    .replace(/\u0435/g, 'e')
+    .replace(/\u043E/g, 'o')
+    .replace(/\u0440/g, 'p')
+    .replace(/\u0441/g, 'c')
+    .replace(/\u0443/g, 'y')
+    .replace(/\u0445/g, 'x')
+    .replace(/\u0456/g, 'i')
+    .replace(/\u0458/g, 'j');
+
+  for (const [brand, legitDomains] of Object.entries(BRAND_DOMAINS)) {
+    if (cyrillicNormalized === brand && unicodeName !== brand) {
+      issues.push(`Brand lookalike / Cyrillic homoglyph spoofing: '${unicodeName}' mimics '${brand}'`);
+      return { isLookalike: true, issues, brand };
+    }
+  }
+
+  // 2. Brand name appears in hostname, but the main domain is not the brand's real domain
   for (const [brand, legitDomains] of Object.entries(BRAND_DOMAINS)) {
     const brandRegex = new RegExp('(^|[^a-z0-9])' + brand + '([^a-z0-9]|$)', 'i');
     if (brandRegex.test(cleanHost)) {
@@ -260,7 +318,7 @@ function checkBrandLookalike(hostname, mainDomain) {
     }
   }
 
-  // 2. Main domain is 1-2 letters different from a brand (e.g., paypa1, g00gle)
+  // 3. Main domain is 1-2 letters different from a brand (e.g., paypa1, g00gle)
   const normalizedMain = mainName
     .replace(/0/g, 'o')
     .replace(/1/g, 'l')
@@ -278,11 +336,17 @@ function checkBrandLookalike(hostname, mainDomain) {
       return { isLookalike: true, issues, brand };
     }
 
-    // Levenshtein distance 1 or 2
-    if (Math.abs(mainName.length - brand.length) <= 2) {
+    // Levenshtein distance 1 or 2 (only for brand names with length >= 4 to avoid 2-letter collision false alarms)
+    if (brand.length >= 4 && mainName.length >= 4 && Math.abs(mainName.length - brand.length) <= 2) {
       const dist = levenshtein(mainName, brand);
       if (dist >= 1 && dist <= 2) {
         issues.push(`Brand typo-squatting: '${mainName}' is ${dist} letter(s) away from '${brand}'`);
+        return { isLookalike: true, issues, brand };
+      }
+    } else if (brand.length === 3 && mainName.length === 3) {
+      const dist = levenshtein(mainName, brand);
+      if (dist === 1) {
+        issues.push(`Brand typo-squatting: '${mainName}' is 1 letter away from '${brand}'`);
         return { isLookalike: true, issues, brand };
       }
     }
@@ -644,12 +708,16 @@ async function runLocalHeuristics(rawUrl, options = {}) {
     score += 2;
   }
 
-  // 11. SUSPICIOUS KEYWORDS (with %xx decoding and whole-word matching)
+  // 11. SUSPICIOUS KEYWORDS (with %xx decoding and whole-word matching, skipped on legitimate brand domains)
   PROTOCOLS.SUSPICIOUS_KEYWORDS = true;
-  checks.SUSPICIOUS_KEYWORDS = checkKeywords(rawUrl);
-  if (checks.SUSPICIOUS_KEYWORDS.length > 0) {
-    issues.push(`Suspicious keywords: ${checks.SUSPICIOUS_KEYWORDS.join(', ')}`);
-    score += 1;
+  if (!isLegitimateBrandDomain(mainDomain)) {
+    checks.SUSPICIOUS_KEYWORDS = checkKeywords(rawUrl);
+    if (checks.SUSPICIOUS_KEYWORDS.length > 0) {
+      issues.push(`Suspicious keywords: ${checks.SUSPICIOUS_KEYWORDS.join(', ')}`);
+      score += 1;
+    }
+  } else {
+    checks.SUSPICIOUS_KEYWORDS = [];
   }
 
   // 12. URL SHORTENER
@@ -660,13 +728,13 @@ async function runLocalHeuristics(rawUrl, options = {}) {
     score += 2;
   }
 
-  // 13. PUNYCODE & HOMOGRAPH ATTACK (Counted ONCE)
+  // 13. PUNYCODE & HOMOGRAPH ATTACK (Counted ONCE, only genuine attacks)
   PROTOCOLS.PUNYCODE = true;
   PROTOCOLS.HOMOGRAPH_ATTACK = true;
   const homograph = checkHomograph(cleanHost);
   checks.PUNYCODE = homograph.isPunycode;
-  checks.HOMOGRAPH_ATTACK = homograph.isPunycode;
-  if (homograph.isPunycode) {
+  checks.HOMOGRAPH_ATTACK = homograph.isAttack;
+  if (homograph.isAttack) {
     issues.push('Punycode / Homograph domain detected');
     score += 5;
   }
@@ -758,7 +826,18 @@ async function runLocalHeuristics(rawUrl, options = {}) {
         const finalHost = finalParsed.hostname.toLowerCase().replace(/\.$/, '');
         const finalMainDomain = getMainDomain(finalHost);
 
-        if (finalMainDomain && mainDomain && finalMainDomain !== mainDomain) {
+        const unicodeMain = domainToUnicode(mainDomain);
+        const unicodeFinal = domainToUnicode(finalMainDomain);
+        const isEquivalentDomain = Boolean(
+          finalMainDomain === mainDomain ||
+          unicodeMain === unicodeFinal ||
+          domainToASCII(finalMainDomain) === domainToASCII(mainDomain) ||
+          unicodeMain.replace(/ü/g, 'ue').replace(/ä/g, 'ae').replace(/ö/g, 'oe') === unicodeFinal ||
+          unicodeFinal.replace(/ü/g, 'ue').replace(/ä/g, 'ae').replace(/ö/g, 'oe') === unicodeMain
+        );
+
+        // Do not flag different domain if it's a URL shortener (normal function) or equivalent IDN transliteration
+        if (finalMainDomain && mainDomain && !isEquivalentDomain && !isShortUrl(cleanHost)) {
           issues.push(`Redirects to a different domain (${mainDomain} -> ${finalMainDomain})`);
           score += 2;
         }
@@ -794,10 +873,12 @@ async function runLocalHeuristics(rawUrl, options = {}) {
           score += 2;
         }
 
-        const finalKeywords = checkKeywords(checks.REDIRECT_CHECK.finalUrl);
-        if (finalKeywords.length > 0 && checks.SUSPICIOUS_KEYWORDS.length === 0) {
-          issues.push(`Redirect destination contains suspicious keywords: ${finalKeywords.join(', ')}`);
-          score += 1;
+        if (!isLegitimateBrandDomain(finalMainDomain)) {
+          const finalKeywords = checkKeywords(checks.REDIRECT_CHECK.finalUrl);
+          if (finalKeywords.length > 0 && checks.SUSPICIOUS_KEYWORDS.length === 0) {
+            issues.push(`Redirect destination contains suspicious keywords: ${finalKeywords.join(', ')}`);
+            score += 1;
+          }
         }
       } catch {
         // Ignore parsing error of final URL
@@ -843,4 +924,6 @@ async function runLocalHeuristics(rawUrl, options = {}) {
   };
 }
 
+runLocalHeuristics.runLocalHeuristics = runLocalHeuristics;
+runLocalHeuristics.scanLink = runLocalHeuristics;
 module.exports = runLocalHeuristics;
