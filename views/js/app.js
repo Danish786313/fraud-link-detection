@@ -163,59 +163,363 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  function classifyCheck(value) {
-    if (value === true) return ['warn', 'Flagged'];
-    if (value === false) return ['pass', 'Clear'];
-    if (Array.isArray(value)) return value.length ? ['warn', 'Found'] : ['pass', 'Clear'];
-    if (value && typeof value === 'object') {
-      if (
-        value.resolved === false ||
-        value.valid === false ||
-        value.malicious > 0 ||
-        value.tooManyRedirects === true ||
-        (value.ageDays != null && value.ageDays < 30)
-      ) {
-        return ['fail', 'Threat'];
-      }
-      if (value.available === false || value.message || value.error) {
-        return ['info', 'N/A'];
-      }
-      if (
-        value.resolved === true ||
-        value.valid === true ||
-        value.available === true ||
-        value.ageDays >= 30
-      ) {
-        return ['pass', 'Pass'];
-      }
-    }
-    return ['info', 'Info'];
+  const POSITIVE_CHECKS = new Set([
+    'HTTP_PROTOCOL',
+    'HTTPS_CHECK',
+    'HOSTNAME',
+    'PORT_CHECK',
+    'RISKY_TLD',
+    'FREE_HOSTING',
+    'URL_LENGTH',
+    'BRAND_LOOKALIKE'
+  ]);
+
+  const NEGATIVE_CHECKS = new Set([
+    'AT_TRICK',
+    'SHORT_URL',
+    'PUNYCODE',
+    'HOMOGRAPH_ATTACK',
+    'SUBDOMAIN_CHECK',
+    'EMAIL_DOMAIN_CHECK'
+  ]);
+
+  const REAL_CERT_ERROR_CODES = new Set([
+    'CERT_HAS_EXPIRED',
+    'DEPTH_ZERO_SELF_SIGNED_CERT',
+    'SELF_SIGNED_CERT_IN_CHAIN',
+    'UNABLE_TO_VERIFY_LEAF_SIGNATURE',
+    'UNABLE_TO_GET_ISSUER_CERT_LOCALLY',
+    'ERR_TLS_CERT_ALTNAME_INVALID',
+    'CERT_UNTRUSTED'
+  ]);
+
+  function findMatchingIssue(issues, keywords) {
+    if (!Array.isArray(issues) || !issues.length) return null;
+    return issues.find(issue => {
+      const lower = issue.toLowerCase();
+      return keywords.some(k => lower.includes(k.toLowerCase()));
+    }) || null;
   }
 
-  function describeValue(value) {
-    if (value === true) return 'Risk detected by this check.';
-    if (value === false) return 'Passed with no issue detected.';
-    if (value == null) return 'No evaluation returned.';
-    if (Array.isArray(value)) return value.length ? value.join(', ') : 'None detected.';
-    if (typeof value === 'object') {
-      const preferred = [
-        ['resolved', v => (v ? 'Domain resolves active IP address' : 'Domain does not resolve')],
-        ['addresses', v => `Addresses: ${v.join(', ')}`],
-        ['valid', v => (v ? 'TLS Certificate is trusted' : 'Certificate untrusted / invalid')],
-        ['ageDays', v => `Domain age: ${v} days`],
-        ['createdAt', v => `Registered: ${new Date(v).toLocaleDateString()}`],
-        ['malicious', v => `${v} malicious reports`],
-        ['suspicious', v => `${v} suspicious reports`],
-        ['redirected', v => (v ? 'Redirects detected' : 'Direct connection')],
-        ['tooManyRedirects', v => (v ? 'Excessive redirects' : 'Normal redirect chain')],
-        ['redirectChain', v => `${v.length} redirect hop(s)`],
-        ['message', v => String(v)],
-        ['error', v => String(v)]
-      ];
-      const lines = preferred.filter(([k]) => k in value).map(([k, f]) => f(value[k]));
-      return lines.length ? lines.join('; ') : JSON.stringify(value);
+  function classifyCheck(name, value, result) {
+    const norm = String(name || '').toUpperCase();
+    const evaluatedChecks = (result && result.checks) ? result.checks : {};
+    const isEvaluated = norm in evaluatedChecks;
+
+    // Check was skipped due to DNS failure or early halt
+    if (value && typeof value === 'object' && value.message && value.message.includes('DNS failed')) {
+      return ['info', 'Skipped'];
     }
-    return String(value);
+    if (!isEvaluated && value === false) {
+      return ['info', 'Skipped'];
+    }
+
+    if (POSITIVE_CHECKS.has(norm)) {
+      if (value === true) return ['pass', 'Passed'];
+      if (value === false) return ['fail', 'Threat'];
+    }
+
+    if (NEGATIVE_CHECKS.has(norm)) {
+      if (value === true) return ['fail', 'Threat'];
+      if (value === false) return ['pass', 'Clear'];
+    }
+
+    if (norm === 'SUSPICIOUS_KEYWORDS') {
+      if (Array.isArray(value) && value.length > 0) return ['warn', 'Found'];
+      return ['pass', 'Clear'];
+    }
+
+    if (Array.isArray(value)) {
+      return value.length ? ['warn', 'Found'] : ['pass', 'Clear'];
+    }
+
+    if (value && typeof value === 'object') {
+      if (norm === 'DNSLOOKUP') {
+        return value.resolved === false ? ['fail', 'Threat'] : ['pass', 'Passed'];
+      }
+      if (norm === 'DOMAIN_AGE') {
+        if (value.available && value.ageDays != null) {
+          return value.ageDays < 30 ? ['fail', 'Threat'] : ['pass', 'Passed'];
+        }
+        return ['info', 'N/A'];
+      }
+      if (norm === 'SSL_CERTIFICATE') {
+        if (value.valid === false) {
+          if (value.code && REAL_CERT_ERROR_CODES.has(value.code)) {
+            return ['fail', 'Threat'];
+          }
+          return ['info', 'Skipped'];
+        }
+        if (value.valid === true) return ['pass', 'Passed'];
+        return ['info', 'N/A'];
+      }
+      if (norm === 'REDIRECT_CHECK') {
+        if (value.blockedInternal || value.tooManyRedirects) return ['fail', 'Threat'];
+        if (value.redirected) return ['warn', 'Redirect'];
+        return ['pass', 'Clear'];
+      }
+      if (norm === 'BLACKLIST_CHECK' || norm === 'VIRUSTOTAL') {
+        if (value.malicious > 0) return ['fail', 'Threat'];
+        if (value.available === false) return ['info', 'N/A'];
+        return ['pass', 'Clear'];
+      }
+
+      if (value.resolved === false || value.valid === false || (value.malicious && value.malicious > 0)) {
+        return ['fail', 'Threat'];
+      }
+      if (value.available === false || (value.valid == null && value.resolved == null && !value.redirected && value.message)) {
+        return ['info', 'N/A'];
+      }
+      return ['pass', 'Passed'];
+    }
+
+    if (value === true) return ['warn', 'Flagged'];
+    if (value === false) return ['pass', 'Clear'];
+    return ['info', 'N/A'];
+  }
+
+  function describeCheck(name, value, result) {
+    const norm = String(name || '').toUpperCase();
+    const evaluatedChecks = (result && result.checks) ? result.checks : {};
+    const isEvaluated = norm in evaluatedChecks;
+    const issues = Array.isArray(result && result.issues) ? result.issues : [];
+
+    // Check was skipped due to DNS failure
+    if (value && typeof value === 'object' && value.message && value.message.includes('DNS failed')) {
+      return `${value.message}. Verification skipped because the domain does not resolve to an active IP.`;
+    }
+
+    // If check was skipped due to early exit (e.g. dangerous protocol)
+    if (!isEvaluated && value === false) {
+      return 'Check skipped: scan halted immediately due to a high-severity prior threat.';
+    }
+
+    switch (norm) {
+      case 'HTTP_PROTOCOL': {
+        if (value === false) {
+          const matched = findMatchingIssue(issues, ['blocked dangerous protocol', 'blocked non-http']);
+          return matched
+            ? `${matched}. Using non-standard or executable protocols allows arbitrary code execution or local file access.`
+            : 'Dangerous or unapproved protocol scheme detected (e.g., javascript:, data:, file:). Extreme risk of code injection.';
+        }
+        return 'Standard HTTP/HTTPS protocol verified. No dangerous script, data, or local file schemes.';
+      }
+
+      case 'AT_TRICK': {
+        if (value === true) {
+          return 'URL contains embedded credentials (@ trick). The URL disguises the real landing host behind a fake username or password prefix.';
+        }
+        return 'No embedded credentials or deceptive "@" host masking detected.';
+      }
+
+      case 'HTTPS_CHECK': {
+        if (value === false) {
+          return 'Not using HTTPS. Connection is sent unencrypted over plain HTTP, exposing all data to network interception and man-in-the-middle tampering.';
+        }
+        return 'Secure HTTPS in use. Transport data is encrypted via TLS.';
+      }
+
+      case 'HOSTNAME': {
+        if (value === false) {
+          return `Hostname is a raw IP address (${result && result.hostname ? result.hostname : 'direct IP'}). Attackers frequently use raw IPs to bypass domain reputation blocks and SSL verification.`;
+        }
+        const internalMatched = findMatchingIssue(issues, ['private/internal ip address', 'internal ip']);
+        if (internalMatched) {
+          return `${internalMatched}. Threat: private network address manipulation (SSRF).`;
+        }
+        return 'Valid domain hostname used (not a raw IP address).';
+      }
+
+      case 'PORT_CHECK': {
+        if (value === false) {
+          const matched = findMatchingIssue(issues, ['non-standard port']);
+          return matched
+            ? `${matched}. Legitimate websites use standard web ports 80/443; non-standard ports often host rogue phishing servers.`
+            : 'Non-standard port detected. Phishing and malware services often operate on unusual ports to evade perimeter firewalls.';
+        }
+        return 'Standard web port in use (default 80/443).';
+      }
+
+      case 'RISKY_TLD': {
+        if (value === false) {
+          const matched = findMatchingIssue(issues, ['risky top-level domain', 'risky tld']);
+          return matched
+            ? `${matched}. This top-level extension has a high statistical correlation with disposable spam, malware, and fraudulent operations.`
+            : 'Risky top-level domain (TLD) detected. Commonly abused extension for low-cost, disposable scams.';
+        }
+        return 'Top-level domain (TLD) is an established, standard commercial or country extension.';
+      }
+
+      case 'FREE_HOSTING': {
+        if (value === false) {
+          const matched = findMatchingIssue(issues, ['hosted on free platform']);
+          return matched
+            ? `${matched}. Free hosting platforms are frequently exploited by attackers to publish short-lived phishing landing pages without domain registration fees.`
+            : 'Hosted on a free public cloud platform commonly abused for hosting disposable phishing sites.';
+        }
+        return 'Hosted on custom or dedicated infrastructure (not a free phishing-prone subdomain host).';
+      }
+
+      case 'URL_LENGTH': {
+        if (value === false) {
+          return `Unusually long URL (${(result && result.url ? result.url : '').length} characters, exceeds 2048 chars). Threat actors craft oversized URLs to overflow address bars or conceal injected exploit payloads.`;
+        }
+        return `URL length is normal and within safe browser limits (${(result && result.url ? result.url : '').length} characters <= 2048).`;
+      }
+
+      case 'SUSPICIOUS_KEYWORDS': {
+        if (Array.isArray(value) && value.length > 0) {
+          return `Phishing lure keywords detected: "${value.join('", "')}". Commonly used in deceptive social engineering to trick victims into entering account credentials or financial details.`;
+        }
+        return 'No deceptive social engineering, credential harvesting, or phishing lure keywords found in URL path or parameters.';
+      }
+
+      case 'SHORT_URL': {
+        if (value === true) {
+          return `URL shortener detected (${result && result.hostname ? result.hostname : 'short link'}). Masks the destination domain, hiding the true target domain prior to clicking.`;
+        }
+        return 'Direct destination link; not masked or obscured by URL shortening services.';
+      }
+
+      case 'PUNYCODE': {
+        if (value === true) {
+          return 'Punycode internationalized domain format detected (xn--). Often utilized to visually imitate trusted ASCII domain names using foreign character sets.';
+        }
+        return 'Standard ASCII domain formatting; no punycode prefix (xn--) detected.';
+      }
+
+      case 'HOMOGRAPH_ATTACK': {
+        if (value === true) {
+          return 'Homograph / IDN spoofing attack detected. Employs lookalike Cyrillic or Greek characters to impersonate legitimate brand spellings.';
+        }
+        return 'Character set verified clean; no deceptive Cyrillic, Greek, or mixed-script homoglyphs detected.';
+      }
+
+      case 'BRAND_LOOKALIKE': {
+        if (value === false) {
+          const matched = findMatchingIssue(issues, ['brand lookalike', 'brand impersonation', 'brand typo-squatting']);
+          return matched
+            ? `${matched}. Specifically designed to deceive users into believing they are interacting with an authentic institution.`
+            : 'Brand lookalike / typo-squatting detected. Domain mimics a recognized corporate brand to deceive users.';
+        }
+        return 'No brand impersonation, deceptive lookalike naming, or typo-squatting detected.';
+      }
+
+      case 'SUBDOMAIN_CHECK': {
+        if (value === true) {
+          return 'Excessive subdomains detected (>= 3 prefix parts). Phishing actors frequently nest deep subdomains (e.g. paypal.com.evil.xyz) to simulate legitimate domains on mobile screens.';
+        }
+        return 'Subdomain depth is normal and structurally standard (< 3 prefix parts).';
+      }
+
+      case 'EMAIL_DOMAIN_CHECK': {
+        if (value === true) {
+          return 'Suspicious email service keywords detected in domain name. Attackers use these to impersonate corporate webmail and harvest email logins.';
+        }
+        return 'Domain name does not mimic unauthorized mail service or webmail login infrastructure.';
+      }
+
+      case 'DNSLOOKUP': {
+        if (value && typeof value === 'object') {
+          if (value.resolved === false) {
+            return 'Domain failed DNS resolution. Host does not resolve to any active IP address on the internet; domain may be dead or configured exclusively for offline spoofing.';
+          }
+          const addrs = Array.isArray(value.addresses) && value.addresses.length ? value.addresses.slice(0, 3).join(', ') : 'active';
+          return `Active domain successfully resolved: points to live IP address(es) ${addrs}.`;
+        }
+        return 'DNS resolution verified.';
+      }
+
+      case 'DOMAIN_AGE': {
+        if (value && typeof value === 'object') {
+          if (value.available && value.ageDays != null) {
+            if (value.ageDays < 30) {
+              const regDate = value.createdAt ? new Date(value.createdAt).toLocaleDateString() : 'recently';
+              return `High-risk zero-day domain: registered only ${value.ageDays} day(s) ago (${regDate}). Phishing campaigns predominantly operate on newly created, disposable domains.`;
+            }
+            const regDate = value.createdAt ? new Date(value.createdAt).toLocaleDateString() : 'N/A';
+            return `Established domain: registered ${value.ageDays} days ago (${regDate}).`;
+          }
+          if (value.message) {
+            return `${value.message}.`;
+          }
+        }
+        return 'Domain age lookup not applicable for this host.';
+      }
+
+      case 'SSL_CERTIFICATE': {
+        if (value && typeof value === 'object') {
+          if (value.valid === false) {
+            const isRealError = value.code && REAL_CERT_ERROR_CODES.has(value.code);
+            if (isRealError) {
+              return `Untrusted or invalid SSL/TLS certificate: ${value.error || value.code}. Connection lacks verified cryptographic trust and is vulnerable to man-in-the-middle attacks (+5 points).`;
+            }
+            return `Could not check SSL: connection timed out or reset by server (${value.error || 'unreachable'}). No penalty score assigned (0 points).`;
+          }
+          if (value.valid === true) {
+            const issuer = value.issuer ? `issued by ${value.issuer}` : 'issued by a trusted Certificate Authority';
+            const expiry = value.validTo ? `, valid through ${new Date(value.validTo).toLocaleDateString()}` : '';
+            return `Valid, trusted SSL certificate (${issuer}${expiry}).`;
+          }
+          if (value.message) {
+            return `${value.message}.`;
+          }
+        }
+        return 'SSL certificate evaluation not applicable.';
+      }
+
+      case 'REDIRECT_CHECK': {
+        if (value && typeof value === 'object') {
+          if (value.blockedInternal) {
+            return `SSRF attack prevented: redirect destination pointed to private/internal network IP (${value.error || 'blocked'}).`;
+          }
+          if (value.tooManyRedirects) {
+            return `Too many redirects detected (${value.hops || 0} hops). Excessive redirection loops are often used to exhaust security scanners and conceal destinations.`;
+          }
+          if (value.redirected) {
+            const matched = findMatchingIssue(issues, ['redirects to a different domain']);
+            const diffNote = matched ? ` Warning: ${matched}.` : '';
+            return `Redirect chain followed (${value.hops || 1} hop(s)) to ${value.finalUrl || 'target'}.${diffNote}`;
+          }
+          if (value.message) {
+            return `${value.message}.`;
+          }
+          return 'Direct connection; no redirect hops detected.';
+        }
+        return 'Direct connection verified.';
+      }
+
+      case 'BLACKLIST_CHECK':
+      case 'VIRUSTOTAL': {
+        if (value && typeof value === 'object') {
+          if (value.malicious > 0) {
+            return `Domain flagged as malicious by ${value.malicious} threat intelligence engine(s). Confirmed phishing, scam, or malware distribution site.`;
+          }
+          if (value.available === false) {
+            return `${value.message || 'Threat intelligence blacklist feed not configured (local heuristic checks active).'}`;
+          }
+          return 'Clean on threat intelligence feeds; 0 malicious or suspicious security engine flags.';
+        }
+        return 'Threat intelligence evaluation clear.';
+      }
+
+      default: {
+        if (Array.isArray(value)) {
+          return value.length ? `Detected items: ${value.join(', ')}` : 'No anomalies detected.';
+        }
+        if (value && typeof value === 'object') {
+          if (value.message) return String(value.message);
+          if (value.error) return `Error encountered: ${value.error}`;
+        }
+        if (value === true) return 'Heuristic threat signature detected by this check.';
+        if (value === false) return 'Passed with no threat indicators detected.';
+        return 'Evaluation not applicable for this link.';
+      }
+    }
+  }
+
+  function describeValue(value, name, result) {
+    return describeCheck(name || '', value, result || {});
   }
 
   function renderResult(responsePayload) {
@@ -298,7 +602,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const mergedChecks = { ...(result.PROTOCOLS || result.protocols || {}), ...(result.checks || {}) };
     Object.entries(mergedChecks).forEach(([checkName, checkVal]) => {
-      const [state, label] = classifyCheck(checkVal);
+      const [state, label] = classifyCheck(checkName, checkVal, result);
 
       const row = document.createElement('li');
       row.className = 'check-row';
@@ -313,7 +617,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
       const descSpan = document.createElement('span');
       descSpan.className = 'check-desc';
-      descSpan.textContent = describeValue(checkVal);
+      descSpan.textContent = describeCheck(checkName, checkVal, result);
 
       row.appendChild(titleSpan);
       row.appendChild(pillSpan);

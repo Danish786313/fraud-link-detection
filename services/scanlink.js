@@ -202,14 +202,21 @@ function isShortUrl(hostname) {
   );
 }
 
+// Decode %xx one at a time with a regex, so a single bad % doesn't break the keyword check
+function decodePercentHex(str) {
+  if (!str) return '';
+  return str.replace(/%([0-9a-fA-F]{2})/g, (match, hex) => {
+    try {
+      return decodeURIComponent(match);
+    } catch {
+      return String.fromCharCode(parseInt(hex, 16));
+    }
+  });
+}
+
 // Check suspicious keywords matching whole words only after %xx decoding
 function checkKeywords(rawUrl) {
-  let decoded = rawUrl;
-  try {
-    decoded = decodeURIComponent(rawUrl);
-  } catch {
-    // Keep rawUrl if decoding fails
-  }
+  const decoded = decodePercentHex(rawUrl);
   const lower = decoded.toLowerCase();
 
   return SUSPICIOUS_KEYWORDS.filter(keyword => {
@@ -219,7 +226,7 @@ function checkKeywords(rawUrl) {
   });
 }
 
-// Check excessive subdomains (parts in front of the main domain)
+// Check excessive subdomains (parts in front of the main domain, >= 3)
 function checkSubdomains(hostname, mainDomain) {
   if (!hostname || !mainDomain || net.isIP(hostname)) return false;
   if (hostname === mainDomain) return false;
@@ -228,7 +235,7 @@ function checkSubdomains(hostname, mainDomain) {
   const mainParts = mainDomain.split('.');
   const prefixPartsCount = hostParts.length - mainParts.length;
 
-  return prefixPartsCount > 3;
+  return prefixPartsCount >= 3;
 }
 
 // Legitimate brand domains where auth keywords (login, signin) are expected and safe
@@ -237,15 +244,26 @@ const OFFICIAL_BRAND_DOMAINS = [
   'facebook.com', 'netflix.com', 'chase.com', 'wellsfargo.com',
   'citibank.com', 'citi.com', 'bankofamerica.com', 'hsbc.com',
   'barclays.com', 'barclays.co.uk', 'hdfcbank.com', 'icicibank.com',
-  'sbi.co.in', 'github.com', 'freecodecamp.org'
+  'sbi.co.in', 'github.com'
 ];
+
+function isBrandOwnDomain(cleanMain, brand, legitDomains = []) {
+  if (!cleanMain || !brand) return false;
+  if (legitDomains.some(legit => cleanMain === legit || cleanMain.endsWith('.' + legit))) {
+    return true;
+  }
+  const mainName = cleanMain.split('.')[0];
+  return mainName === brand;
+}
 
 function isLegitimateBrandDomain(mainDomain) {
   if (!mainDomain) return false;
+  const mainName = mainDomain.toLowerCase().split('.')[0];
+  if (Object.keys(BRAND_DOMAINS).includes(mainName)) return true;
   return OFFICIAL_BRAND_DOMAINS.some(d => mainDomain === d || mainDomain.endsWith('.' + d));
 }
 
-// Check homograph / Punycode (distinguishing malicious spoofing from valid language IDNs like münchen.de)
+// Check homograph / Punycode: flag only mixed scripts (Latin + Cyrillic/Greek), not every Cyrillic domain
 function checkHomograph(hostname) {
   const ascii = domainToASCII(hostname);
   const unicode = domainToUnicode(hostname);
@@ -256,18 +274,15 @@ function checkHomograph(hostname) {
   }
 
   // Detect homoglyph spoofing on decoded unicode representation:
+  // Flag only mixed scripts (Latin + Cyrillic/Greek), not every Cyrillic domain.
   const hasCyrillic = /[\u0400-\u04FF]/.test(unicode);
   const hasGreek = /[\u0370-\u03FF]/.test(unicode);
   const hasLatin = /[a-zA-Z]/.test(unicode);
-  const isMixedScript = (hasCyrillic || hasGreek) && hasLatin;
-
-  // Cyrillic or Greek targeting Latin generic TLDs (.com, .net, .org)
-  const isTargetingGeneric = ascii.endsWith('.com') || ascii.endsWith('.net') || ascii.endsWith('.org');
-  const isAttack = Boolean(isMixedScript || hasCyrillic || hasGreek || (isTargetingGeneric && (hasCyrillic || hasGreek)));
+  const isMixedScript = Boolean((hasCyrillic || hasGreek) && hasLatin);
 
   return {
     isPunycode: isPuny,
-    isAttack,
+    isAttack: isMixedScript,
     ascii,
     unicode
   };
@@ -300,54 +315,62 @@ function checkBrandLookalike(hostname, mainDomain) {
     .replace(/\u0458/g, 'j');
 
   for (const [brand, legitDomains] of Object.entries(BRAND_DOMAINS)) {
+    // Allow the brand's own domain in any country (e.g. amazon.co.uk, google.de)
+    if (isBrandOwnDomain(cleanMain, brand, legitDomains)) {
+      continue;
+    }
+
     if (cyrillicNormalized === brand && unicodeName !== brand) {
       issues.push(`Brand lookalike / Cyrillic homoglyph spoofing: '${unicodeName}' mimics '${brand}'`);
       return { isLookalike: true, issues, brand };
     }
-  }
 
-  // 2. Brand name appears in hostname, but the main domain is not the brand's real domain
-  for (const [brand, legitDomains] of Object.entries(BRAND_DOMAINS)) {
+    // 2. For brands of 5+ letters, use mainName.includes(brand) so that securepaypal.com is caught
+    if (brand.length >= 5 && mainName.includes(brand)) {
+      issues.push(`Brand impersonation: '${brand}' found in domain name '${cleanMain}'`);
+      return { isLookalike: true, issues, brand };
+    }
+
+    // 3. Brand name appears as full word in hostname, but the main domain is not the brand's real domain
     const brandRegex = new RegExp('(^|[^a-z0-9])' + brand + '([^a-z0-9]|$)', 'i');
     if (brandRegex.test(cleanHost)) {
-      const isLegit = legitDomains.some(legit => cleanMain === legit || cleanMain.endsWith('.' + legit));
-      if (!isLegit) {
-        issues.push(`Brand impersonation: '${brand}' found in hostname, but domain is '${cleanMain}'`);
-        return { isLookalike: true, issues, brand };
-      }
+      issues.push(`Brand impersonation: '${brand}' found in hostname, but domain is '${cleanMain}'`);
+      return { isLookalike: true, issues, brand };
     }
-  }
 
-  // 3. Main domain is 1-2 letters different from a brand (e.g., paypa1, g00gle)
-  const normalizedMain = mainName
-    .replace(/0/g, 'o')
-    .replace(/1/g, 'l')
-    .replace(/3/g, 'e')
-    .replace(/5/g, 's')
-    .replace(/@/g, 'a');
+    // 4. Leetspeak direct match (e.g., paypa1, g00gle)
+    const normalizedMain = mainName
+      .replace(/0/g, 'o')
+      .replace(/1/g, 'l')
+      .replace(/3/g, 'e')
+      .replace(/5/g, 's')
+      .replace(/@/g, 'a');
 
-  for (const [brand, legitDomains] of Object.entries(BRAND_DOMAINS)) {
-    const isLegit = legitDomains.some(legit => cleanMain === legit || cleanMain.endsWith('.' + legit));
-    if (isLegit) continue;
-
-    // Leetspeak direct match
     if (normalizedMain === brand && mainName !== brand) {
       issues.push(`Brand lookalike / character substitution: '${mainName}' mimics '${brand}'`);
       return { isLookalike: true, issues, brand };
     }
 
-    // Levenshtein distance 1 or 2 (only for brand names with length >= 4 to avoid 2-letter collision false alarms)
-    if (brand.length >= 4 && mainName.length >= 4 && Math.abs(mainName.length - brand.length) <= 2) {
-      const dist = levenshtein(mainName, brand);
-      if (dist >= 1 && dist <= 2) {
-        issues.push(`Brand typo-squatting: '${mainName}' is ${dist} letter(s) away from '${brand}'`);
-        return { isLookalike: true, issues, brand };
+    // 5. Typo check:
+    // - allow a 1-letter difference for brands of 6 letters or fewer (and 7)
+    // - 2 letters only for 8 or more
+    // - no typo check for 3-letter brands
+    // (chess.com and maple.com must not be flagged)
+    if (brand.length >= 8) {
+      if (Math.abs(mainName.length - brand.length) <= 2) {
+        const dist = levenshtein(mainName, brand);
+        if (dist >= 1 && dist <= 2) {
+          issues.push(`Brand typo-squatting: '${mainName}' is ${dist} letter(s) away from '${brand}'`);
+          return { isLookalike: true, issues, brand };
+        }
       }
-    } else if (brand.length === 3 && mainName.length === 3) {
-      const dist = levenshtein(mainName, brand);
-      if (dist === 1) {
-        issues.push(`Brand typo-squatting: '${mainName}' is 1 letter away from '${brand}'`);
-        return { isLookalike: true, issues, brand };
+    } else if (brand.length >= 4 && brand.length <= 7) {
+      if (Math.abs(mainName.length - brand.length) <= 1) {
+        const dist = levenshtein(mainName, brand);
+        if (dist === 1) {
+          issues.push(`Brand typo-squatting: '${mainName}' is 1 letter away from '${brand}'`);
+          return { isLookalike: true, issues, brand };
+        }
       }
     }
   }
@@ -409,14 +432,26 @@ async function checkDomainAge(mainDomain) {
   }
 }
 
+// Real SSL certificate error codes to score +5
+const REAL_CERT_ERROR_CODES = new Set([
+  'CERT_HAS_EXPIRED',
+  'DEPTH_ZERO_SELF_SIGNED_CERT',
+  'SELF_SIGNED_CERT_IN_CHAIN',
+  'UNABLE_TO_VERIFY_LEAF_SIGNATURE',
+  'UNABLE_TO_GET_ISSUER_CERT_LOCALLY',
+  'ERR_TLS_CERT_ALTNAME_INVALID',
+  'CERT_UNTRUSTED'
+]);
+
 // SSL certificate validation
-function checkSSL(hostname, port = 443) {
+function connectTLS(hostname, port = 443) {
   return new Promise(resolve => {
     const socket = tls.connect({
       host: hostname,
       port,
       servername: hostname,
       rejectUnauthorized: true,
+      ciphers: 'DEFAULT:@SECLEVEL=0',
       timeout: 5000
     });
 
@@ -426,28 +461,43 @@ function checkSSL(hostname, port = 443) {
       resolve({
         valid: socket.authorized,
         issuer: cert.issuer?.O || cert.issuer?.CN || null,
-        validTo: cert.valid_to || null
+        validTo: cert.valid_to || null,
+        code: socket.authorizationError || null
       });
 
       socket.destroy();
     });
 
     socket.once('error', error => {
+      socket.destroy();
       resolve({
         valid: false,
-        error: error.message
+        error: error.message,
+        code: error.code || null
       });
     });
 
     socket.once('timeout', () => {
+      socket.destroy();
       resolve({
         valid: false,
-        error: 'SSL connection timeout'
+        error: 'SSL connection timeout',
+        code: 'ETIMEDOUT'
       });
-
-      socket.destroy();
     });
   });
+}
+
+async function checkSSL(hostname, port = 443) {
+  let result = await connectTLS(hostname, port);
+  // If reset or timed out, retry with backoff for flaky test hosts like badssl
+  let retries = 0;
+  while (!result.valid && (result.code === 'ECONNRESET' || result.code === 'ETIMEDOUT') && retries < 2) {
+    retries++;
+    await new Promise(r => setTimeout(r, 500 * retries));
+    result = await connectTLS(hostname, port);
+  }
+  return result;
 }
 
 // Redirect checking with SSRF protection on every single hop
@@ -587,31 +637,15 @@ async function runLocalHeuristics(rawUrl, options = {}) {
   const checks = {};
   let score = 0;
 
-  let parsed;
-
-  try {
-    parsed = new URL(rawUrl);
-  } catch {
-    return {
-      url: rawUrl,
-      hostname: '',
-      score: 10,
-      isSuspicious: true,
-      riskLevel: 'HIGH',
-      issues: ['Malformed URL'],
-      checks,
-      PROTOCOLS: { ...PROTOCOLS },
-      protocols: { ...PROTOCOLS }
-    };
-  }
+  let urlToParse = String(rawUrl || '').trim();
+  const lowerUrl = urlToParse.toLowerCase();
 
   // 1. BAD PROTOCOL CHECK (Stop at once for javascript:, data:, file:)
-  PROTOCOLS.HTTP_PROTOCOL = true;
-  const isDangerousProtocol = ['javascript:', 'data:', 'file:'].includes(parsed.protocol);
-  if (isDangerousProtocol) {
-    score = 10;
-    issues.push(`Blocked dangerous protocol: ${parsed.protocol}`);
+  if (lowerUrl.startsWith('javascript:') || lowerUrl.startsWith('data:') || lowerUrl.startsWith('file:')) {
+    PROTOCOLS.HTTP_PROTOCOL = true;
     checks.HTTP_PROTOCOL = false;
+    const protocolScheme = urlToParse.split(':')[0] + ':';
+    issues.push(`Blocked dangerous protocol: ${protocolScheme}`);
 
     return {
       url: rawUrl,
@@ -627,6 +661,31 @@ async function runLocalHeuristics(rawUrl, options = {}) {
     };
   }
 
+  // If the URL has no ://, add https:// before parsing. example.com must not be HIGH.
+  if (!urlToParse.includes('://')) {
+    urlToParse = 'https://' + urlToParse;
+  }
+
+  let parsed;
+
+  try {
+    parsed = new URL(urlToParse);
+  } catch {
+    return {
+      url: rawUrl,
+      hostname: '',
+      score: 10,
+      isSuspicious: true,
+      riskLevel: 'HIGH',
+      issues: ['Malformed URL'],
+      checks,
+      PROTOCOLS: { ...PROTOCOLS },
+      protocols: { ...PROTOCOLS }
+    };
+  }
+
+  // Check HTTP/HTTPS scheme
+  PROTOCOLS.HTTP_PROTOCOL = true;
   checks.HTTP_PROTOCOL = ['http:', 'https:'].includes(parsed.protocol);
   if (!checks.HTTP_PROTOCOL) {
     issues.push(`Blocked non-HTTP protocol: ${parsed.protocol}`);
@@ -776,38 +835,52 @@ async function runLocalHeuristics(rawUrl, options = {}) {
     checks.DNSLOOKUP = { resolved: true, addresses: [cleanHost] };
   }
 
-  // 18. DOMAIN AGE (Sent mainDomain to RDAP, skip for raw IP or internal hosts)
+  const dnsResolved = Boolean(checks.DNSLOOKUP?.resolved);
+
+  // 18. DOMAIN AGE (Sent mainDomain to RDAP, skip for raw IP, internal hosts, or if DNS failed)
   PROTOCOLS.DOMAIN_AGE = true;
-  if (!isRawIP && !isInternal && mainDomain) {
+  if (!isRawIP && !isInternal && mainDomain && dnsResolved) {
     checks.DOMAIN_AGE = await checkDomainAge(mainDomain);
     if (checks.DOMAIN_AGE.available && checks.DOMAIN_AGE.ageDays < 30) {
       issues.push(`Recently registered domain (${checks.DOMAIN_AGE.ageDays} days old)`);
       score += 5;
     }
   } else {
-    checks.DOMAIN_AGE = { available: false, ageDays: null, message: 'Domain age check skipped' };
+    checks.DOMAIN_AGE = {
+      available: false,
+      ageDays: null,
+      message: !dnsResolved ? 'DNS failed (Domain age check skipped)' : 'Domain age check skipped'
+    };
   }
 
-  // 19. SSL CERTIFICATE (Skip for internal IPs or raw HTTP)
+  // 19. SSL CERTIFICATE (Skip for internal IPs, raw HTTP, or if DNS failed)
   PROTOCOLS.SSL_CERTIFICATE = true;
-  if (parsed.protocol === 'https:' && !isRawIP && !isInternal) {
+  if (parsed.protocol === 'https:' && !isRawIP && !isInternal && dnsResolved) {
     const portToUse = parsed.port ? parseInt(parsed.port, 10) : 443;
     checks.SSL_CERTIFICATE = await checkSSL(cleanHost, portToUse);
     if (!checks.SSL_CERTIFICATE.valid) {
-      issues.push(`Invalid or untrusted SSL certificate (${checks.SSL_CERTIFICATE.error || 'untrusted'})`);
-      score += 5;
+      const code = checks.SSL_CERTIFICATE.code;
+      if (code && REAL_CERT_ERROR_CODES.has(code)) {
+        issues.push(`Invalid or untrusted SSL certificate (${checks.SSL_CERTIFICATE.error || code})`);
+        score += 5;
+      } else {
+        // Timeouts and resets get 0 points and the note "Could not check SSL"
+        issues.push('Could not check SSL');
+      }
     }
   } else {
     checks.SSL_CERTIFICATE = {
       valid: parsed.protocol === 'https:',
-      message: parsed.protocol === 'http:' ? 'HTTP connection (SSL skipped)' : 'SSL check skipped'
+      message: parsed.protocol === 'http:'
+        ? 'HTTP connection (SSL skipped)'
+        : (!dnsResolved ? 'DNS failed (SSL skipped)' : 'SSL check skipped')
     };
   }
 
-  // 20. REDIRECT CHECKING (SSRF-protected, checks final URL destination)
+  // 20. REDIRECT CHECKING (SSRF-protected, checks final URL destination, skip if DNS failed)
   PROTOCOLS.REDIRECT_CHECK = true;
-  if (!isInternal) {
-    checks.REDIRECT_CHECK = await checkRedirects(rawUrl);
+  if (!isInternal && dnsResolved) {
+    checks.REDIRECT_CHECK = await checkRedirects(urlToParse);
 
     if (checks.REDIRECT_CHECK.blockedInternal) {
       issues.push(checks.REDIRECT_CHECK.error || 'Redirect to an internal address was blocked');
@@ -885,19 +958,25 @@ async function runLocalHeuristics(rawUrl, options = {}) {
       }
     }
   } else {
-    checks.REDIRECT_CHECK = { redirected: false, message: 'Redirect check skipped for internal host' };
+    checks.REDIRECT_CHECK = {
+      redirected: false,
+      message: !dnsResolved ? 'DNS failed (Redirect check skipped)' : 'Redirect check skipped for internal host'
+    };
   }
 
-  // 21. VIRUSTOTAL BLACKLIST CHECK
+  // 21. VIRUSTOTAL BLACKLIST CHECK (skip if DNS failed)
   PROTOCOLS.BLACKLIST_CHECK = true;
-  if (!isRawIP && !isInternal) {
+  if (!isRawIP && !isInternal && dnsResolved) {
     checks.BLACKLIST_CHECK = await checkBlacklist(cleanHost, options.virusTotalApiKey);
     if (checks.BLACKLIST_CHECK.available && checks.BLACKLIST_CHECK.malicious > 0) {
       issues.push(`Domain flagged as malicious by VirusTotal (${checks.BLACKLIST_CHECK.malicious} engine(s))`);
       score += 10;
     }
   } else {
-    checks.BLACKLIST_CHECK = { available: false, message: 'Blacklist check skipped' };
+    checks.BLACKLIST_CHECK = {
+      available: false,
+      message: !dnsResolved ? 'DNS failed (Blacklist check skipped)' : 'Blacklist check skipped'
+    };
   }
 
   // 22. SET RISK LEVEL FROM THE POINTS TOTAL
