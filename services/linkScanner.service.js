@@ -41,7 +41,6 @@ function normalizeUrl(rawUrl) {
   return { url: normalized, scheme: '', isDangerousScheme: false };
 }
 
-/
 async function scanLink(rawUrl, options = {}) {
   const issues = [];
   const checks = {};
