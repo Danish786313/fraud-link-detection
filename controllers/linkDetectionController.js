@@ -1,6 +1,6 @@
 const Joi = require('joi');
 require("dotenv").config();
-const runLocalHeuristics = require('../services/scanlink');
+const runLocalHeuristics = require('../services/linkScanner.service');
 
 const urlSchema = Joi.object({
   link: Joi.string().trim().required().messages({
@@ -21,7 +21,6 @@ const customFraudDetectionController = async (req, res, next) => {
 
   } catch (err) {
     console.error("::: Error in custom fraud detection controller :::", err);
-    // Pass error to global error catcher or send standard error response
     if (typeof next === 'function') {
       return next(err);
     }

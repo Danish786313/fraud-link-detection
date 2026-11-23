@@ -1,8 +1,4 @@
-/**
- * Link Guard - Frontend Application Script
- */
 document.addEventListener('DOMContentLoaded', () => {
-  // Determine API base URL dynamically
   const API_URL = (window.location.origin && window.location.origin !== 'null')
     ? `${window.location.origin}/api/detect`
     : 'http://localhost:3201/api/detect';
@@ -18,7 +14,6 @@ document.addEventListener('DOMContentLoaded', () => {
   const recentScansBody = document.getElementById('recentScansBody');
   const clearHistoryBtn = document.getElementById('clearHistoryBtn');
 
-  // Initial seed scans for demonstration if storage is empty
   const SEED_SCANS = [
     {
       url: 'https://github.com/login',
@@ -43,7 +38,6 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   ];
 
-  // Local storage management for recent scans
   function getRecentScans() {
     try {
       const stored = localStorage.getItem('link_guard_recent_scans');
@@ -109,7 +103,6 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  // Clear history handler
   if (clearHistoryBtn) {
     clearHistoryBtn.addEventListener('click', () => {
       localStorage.removeItem('link_guard_recent_scans');
@@ -117,10 +110,8 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  // Initial render of recent scans
   renderRecentScans();
 
-  // Reset scan button
   if (resetScanBtn) {
     resetScanBtn.addEventListener('click', () => {
       input.value = '';
@@ -129,7 +120,6 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  // Display notice banner
   function showNotice(message) {
     notice.textContent = message;
     notice.className = 'notice-box show error';
@@ -140,7 +130,6 @@ document.addEventListener('DOMContentLoaded', () => {
     notice.className = 'notice-box';
   }
 
-  // Quick fill chips
   document.querySelectorAll('.chip').forEach(chip => {
     chip.addEventListener('click', () => {
       const urlToTest = chip.dataset.url || chip.textContent.trim();
@@ -149,7 +138,6 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   });
 
-  // Copy raw JSON to clipboard
   if (copyRawBtn) {
     copyRawBtn.addEventListener('click', async () => {
       const rawText = document.getElementById('rawResponse').textContent;
@@ -206,7 +194,6 @@ document.addEventListener('DOMContentLoaded', () => {
     const evaluatedChecks = (result && result.checks) ? result.checks : {};
     const isEvaluated = norm in evaluatedChecks;
 
-    // Check was skipped due to DNS failure or early halt
     if (value && typeof value === 'object' && value.message && value.message.includes('DNS failed')) {
       return ['info', 'Skipped'];
     }
@@ -289,7 +276,6 @@ document.addEventListener('DOMContentLoaded', () => {
       return `${value.message}. Verification skipped because the domain does not resolve to an active IP.`;
     }
 
-    // If check was skipped due to early exit (e.g. dangerous protocol)
     if (!isEvaluated && value === false) {
       return 'Check skipped: scan halted immediately due to a high-severity prior threat.';
     }
@@ -523,7 +509,6 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   function renderResult(responsePayload) {
-    // Unwrap standard envelope { success: true, data: { ... } } or flat object
     const result = (responsePayload && responsePayload.data && !responsePayload.isSuspicious && !responsePayload.checks)
       ? responsePayload.data
       : responsePayload;
@@ -540,7 +525,6 @@ document.addEventListener('DOMContentLoaded', () => {
       HIGH: 'High threat probability! Avoid visiting or submitting sensitive information.'
     };
 
-    // Save to recent scans history
     saveRecentScan({
       url: result.url || input.value,
       hostname: result.hostname || 'Unknown',
@@ -549,7 +533,6 @@ document.addEventListener('DOMContentLoaded', () => {
       timestamp: 'Just now'
     });
 
-    // 1. Verdict Card
     const verdictCard = document.getElementById('verdictCard');
     verdictCard.className = `result-card risk-${activeRisk.toLowerCase()}`;
     document.getElementById('riskBadge').textContent = activeRisk;
@@ -558,17 +541,14 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('scannedUrlText').textContent = result.url || input.value;
     document.getElementById('scanTimestamp').textContent = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
 
-    // 2. Fact metrics
     document.getElementById('domainFact').textContent = result.hostname || '-';
     document.getElementById('issueCountFact').textContent = `${issues.length} (${result.score !== undefined ? result.score : 0} pts)`;
     document.getElementById('engineVerdictFact').textContent = activeRisk === 'SAFE' ? 'Clean' : 'Threat Flagged';
     
-    // Count active PROTOCOLS
     const protocolsMap = result.PROTOCOLS || result.protocols || {};
     const testedCount = Object.values(protocolsMap).filter(Boolean).length || Object.keys(result.checks || {}).length || 14;
     document.getElementById('protocolsCountFact').textContent = `${testedCount} / 14 Active`;
 
-    // 3. Issues List
     const issuesContainer = document.getElementById('issuesList');
     issuesContainer.replaceChildren();
 
@@ -596,7 +576,6 @@ document.addEventListener('DOMContentLoaded', () => {
       });
     }
 
-    // 4. Detailed Security Checks Matrix
     const checksContainer = document.getElementById('checksGrid');
     checksContainer.replaceChildren();
 
@@ -625,15 +604,12 @@ document.addEventListener('DOMContentLoaded', () => {
       checksContainer.appendChild(row);
     });
 
-    // 5. Technical Raw Inspector
     document.getElementById('rawResponse').textContent = JSON.stringify(responsePayload, null, 2);
 
-    // Show section and smoothly scroll
     resultsSection.classList.add('visible');
     resultsSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
 
-  // Core triggerScan function
   async function triggerScan(urlCandidate) {
     clearNotice();
     let rawValue = (urlCandidate || input.value || '').trim();
@@ -643,7 +619,6 @@ document.addEventListener('DOMContentLoaded', () => {
       return;
     }
 
-    // Auto prepend https:// if missing protocol, but preserve existing protocols (http, https, javascript, data, file)
     if (!/^[a-zA-Z][a-zA-Z0-9+.-]*:/i.test(rawValue)) {
       rawValue = 'https://' + rawValue;
       input.value = rawValue;
@@ -700,7 +675,6 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
-  // Handle Form Submission
   form.addEventListener('submit', event => {
     event.preventDefault();
     triggerScan();
