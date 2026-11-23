@@ -28,27 +28,20 @@ const {
   checkBlacklist
 } = require('../utils/networkHelper');
 
-/**
- * Normalizes input URL candidates, prepending https:// if protocol is omitted
- */
 function normalizeUrl(rawUrl) {
   const trimmed = String(rawUrl || '').trim();
   const lower = trimmed.toLowerCase();
 
-  // Flag dangerous client-executable schemes immediately
   if (lower.startsWith('javascript:') || lower.startsWith('data:') || lower.startsWith('file:')) {
     const scheme = trimmed.split(':')[0] + ':';
     return { url: trimmed, scheme, isDangerousScheme: true };
   }
 
-  // Prepend https:// if no scheme is specified (e.g. example.com)
   const normalized = trimmed.includes('://') ? trimmed : `https://${trimmed}`;
   return { url: normalized, scheme: '', isDangerousScheme: false };
 }
 
-/**
- * Core link fraud & phishing detection engine
- */
+/
 async function scanLink(rawUrl, options = {}) {
   const issues = [];
   const checks = {};
@@ -57,7 +50,6 @@ async function scanLink(rawUrl, options = {}) {
 
   const { url: urlToParse, scheme, isDangerousScheme } = normalizeUrl(rawUrl);
 
-  // Early exit for dangerous execution schemes
   if (isDangerousScheme) {
     protocols.HTTP_PROTOCOL = true;
     checks.HTTP_PROTOCOL = false;
@@ -94,7 +86,6 @@ async function scanLink(rawUrl, options = {}) {
     };
   }
 
-  // Protocol validation
   protocols.HTTP_PROTOCOL = true;
   checks.HTTP_PROTOCOL = ['http:', 'https:'].includes(parsed.protocol);
   if (!checks.HTTP_PROTOCOL) {
@@ -102,7 +93,6 @@ async function scanLink(rawUrl, options = {}) {
     score += 10;
   }
 
-  // Credential masking (@ trick)
   protocols.AT_TRICK = true;
   const hasAtTrick = Boolean(parsed.username || parsed.password);
   checks.AT_TRICK = hasAtTrick;
@@ -111,11 +101,9 @@ async function scanLink(rawUrl, options = {}) {
     score += 10;
   }
 
-  // Hostname extraction & normalization
   const cleanHost = parsed.hostname.toLowerCase().replace(/\.$/, '').replace(/[\[\]]/g, '');
   const mainDomain = getMainDomain(cleanHost);
 
-  // Transport security check
   protocols.HTTPS_CHECK = true;
   const isPlainHttp = parsed.protocol === 'http:';
   checks.HTTPS_CHECK = !isPlainHttp;
@@ -124,7 +112,6 @@ async function scanLink(rawUrl, options = {}) {
     score += 2;
   }
 
-  // Direct IP host detection
   protocols.HOSTNAME = true;
   const isRawIP = Boolean(net.isIP(cleanHost));
   checks.HOSTNAME = !isRawIP;
@@ -133,14 +120,12 @@ async function scanLink(rawUrl, options = {}) {
     score += 5;
   }
 
-  // SSRF prevention: private & internal IP inspection
   const isInternal = await isInternalHost(cleanHost);
   if (isInternal) {
     issues.push(`Host points to a private/internal IP address (${cleanHost})`);
     score += 10;
   }
 
-  // Port anomalies
   protocols.PORT_CHECK = true;
   const isNonStandardPort = Boolean(parsed.port && parsed.port !== '80' && parsed.port !== '443');
   checks.PORT_CHECK = !isNonStandardPort;
@@ -149,7 +134,6 @@ async function scanLink(rawUrl, options = {}) {
     score += 2;
   }
 
-  // TLD reputation check
   protocols.RISKY_TLD = true;
   const matchedRiskyTld = RISKY_TLDS.find(tld => cleanHost.endsWith(tld));
   checks.RISKY_TLD = !matchedRiskyTld;
@@ -158,7 +142,6 @@ async function scanLink(rawUrl, options = {}) {
     score += 2;
   }
 
-  // Free hosting abuse
   protocols.FREE_HOSTING = true;
   const matchedFreeHost = FREE_HOSTING_SITES.find(site => cleanHost === site || cleanHost.endsWith(`.${site}`));
   checks.FREE_HOSTING = !matchedFreeHost;
@@ -167,7 +150,6 @@ async function scanLink(rawUrl, options = {}) {
     score += 2;
   }
 
-  // URL length limits
   protocols.URL_LENGTH = true;
   checks.URL_LENGTH = rawUrl.length <= 2048;
   if (!checks.URL_LENGTH) {
@@ -175,7 +157,6 @@ async function scanLink(rawUrl, options = {}) {
     score += 2;
   }
 
-  // Deceptive social engineering keywords
   protocols.SUSPICIOUS_KEYWORDS = true;
   if (!isLegitimateBrandDomain(mainDomain)) {
     checks.SUSPICIOUS_KEYWORDS = checkKeywords(rawUrl);
@@ -187,7 +168,6 @@ async function scanLink(rawUrl, options = {}) {
     checks.SUSPICIOUS_KEYWORDS = [];
   }
 
-  // Shortener masking
   protocols.SHORT_URL = true;
   checks.SHORT_URL = isShortUrl(cleanHost);
   if (checks.SHORT_URL) {
@@ -195,7 +175,6 @@ async function scanLink(rawUrl, options = {}) {
     score += 2;
   }
 
-  // Punycode & homoglyph attacks
   protocols.PUNYCODE = true;
   protocols.HOMOGRAPH_ATTACK = true;
   const homograph = checkHomograph(cleanHost);
@@ -206,7 +185,6 @@ async function scanLink(rawUrl, options = {}) {
     score += 5;
   }
 
-  // Brand impersonation & typo-squatting
   protocols.BRAND_LOOKALIKE = true;
   const brandCheck = checkBrandLookalike(cleanHost, mainDomain);
   checks.BRAND_LOOKALIKE = !brandCheck.isLookalike;
@@ -215,7 +193,6 @@ async function scanLink(rawUrl, options = {}) {
     score += 5;
   }
 
-  // Deep subdomain nesting
   protocols.SUBDOMAIN_CHECK = true;
   checks.SUBDOMAIN_CHECK = checkSubdomains(cleanHost, mainDomain);
   if (checks.SUBDOMAIN_CHECK) {
@@ -223,7 +200,6 @@ async function scanLink(rawUrl, options = {}) {
     score += 2;
   }
 
-  // Unauthorized email keyword domain
   protocols.EMAIL_DOMAIN_CHECK = true;
   checks.EMAIL_DOMAIN_CHECK = checkEmailDomain(cleanHost, mainDomain);
   if (checks.EMAIL_DOMAIN_CHECK) {
@@ -231,7 +207,6 @@ async function scanLink(rawUrl, options = {}) {
     score += 2;
   }
 
-  // DNS lookup
   protocols.DNSLOOKUP = true;
   if (!isRawIP && !isInternal) {
     checks.DNSLOOKUP = await checkDNS(cleanHost);
@@ -245,7 +220,6 @@ async function scanLink(rawUrl, options = {}) {
 
   const dnsResolved = Boolean(checks.DNSLOOKUP?.resolved);
 
-  // RDAP domain age (skipped if DNS fails, IP host, or internal)
   protocols.DOMAIN_AGE = true;
   if (!isRawIP && !isInternal && mainDomain && dnsResolved) {
     checks.DOMAIN_AGE = await checkDomainAge(mainDomain);
@@ -261,7 +235,6 @@ async function scanLink(rawUrl, options = {}) {
     };
   }
 
-  // SSL certificate verification
   protocols.SSL_CERTIFICATE = true;
   if (parsed.protocol === 'https:' && !isRawIP && !isInternal && dnsResolved) {
     const portToUse = parsed.port ? parseInt(parsed.port, 10) : 443;
@@ -285,7 +258,6 @@ async function scanLink(rawUrl, options = {}) {
     };
   }
 
-  // Redirect chain inspection
   protocols.REDIRECT_CHECK = true;
   if (!isInternal && dnsResolved) {
     checks.REDIRECT_CHECK = await checkRedirects(urlToParse);
@@ -368,7 +340,6 @@ async function scanLink(rawUrl, options = {}) {
     };
   }
 
-  // VirusTotal reputation feed
   protocols.BLACKLIST_CHECK = true;
   if (!isRawIP && !isInternal && dnsResolved) {
     checks.BLACKLIST_CHECK = await checkBlacklist(cleanHost, options.virusTotalApiKey);
@@ -383,7 +354,6 @@ async function scanLink(rawUrl, options = {}) {
     };
   }
 
-  // Risk level mapping
   const riskLevel = score >= 10
     ? 'HIGH'
     : score >= 5
